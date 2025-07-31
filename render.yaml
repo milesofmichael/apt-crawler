@@ -9,20 +9,20 @@ services:
       - key: NODE_ENV
         value: production
       - key: SUPABASE_URL
-        fromRepo: true
+        sync: false
       - key: SUPABASE_ANON_KEY
-        fromRepo: true
+        sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
-        fromRepo: true
+        sync: false
       - key: REDIS_URL
         fromService:
           name: apt-crawler-redis
           type: redis
           property: connectionString
       - key: NTFY_TOPIC
-        fromRepo: true
+        sync: false
       - key: NTFY_SERVER
-        fromRepo: true
+        sync: false
 
   - type: redis
     name: apt-crawler-redis
