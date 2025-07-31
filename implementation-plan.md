@@ -395,6 +395,17 @@ After deployment, verify Redis is properly configured:
   }
   ```
 
+### Command Line Options ✅ COMPLETED
+- [x] **`--ignore-database` Flag**:
+  - Force send notifications for ALL found units regardless of database status
+  - Skips database connection and "new unit" checks
+  - Useful for:
+    - Testing notifications without database dependencies
+    - Force-sending notifications after fixing issues
+    - Demonstrations and debugging
+  - Usage: `npm run scrape:once -- --ignore-database`
+  - Example output: "🚫 Database checks disabled - will notify for all found units"
+
 ## Phase 7: Testing & Monitoring
 
 ### Local Testing

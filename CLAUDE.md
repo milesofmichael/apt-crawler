@@ -34,11 +34,22 @@
   - units_found, new_units, errors, status
 
 ## Notification Format (Ntfy.sh)
+**Single Unit:**
 ```
-📍 New Studio Available!
-WEST-641: $1,991/mo
-Available: 9/28
-Floorplan: The Dellwood
+New Unit Available
+The Dellwood - #WEST-641 - $1,991 - Available Sep 28
+```
+
+**Multiple Units (3 or fewer):**
+```
+3 New Units Available
+The Dellwood - #WEST-641 - $1,991 - Available Sep 28 | The Gateway - #WEST-437 - $2,699 - Available Sep 05 | ...
+```
+
+**Multiple Units (4+):**
+```
+5 New Units Available
+2 studios, 3 1BRs - View all at flatsatpcm.com/floorplans
 ```
 
 ## Implementation Details
@@ -55,9 +66,17 @@ Floorplan: The Dellwood
 - REDIS_URL (auto-configured by Render)
 - NODE_ENV, LOG_LEVEL
 
+## Commands
+- `npm run scrape:once` - Run scraper once and check for new units
+- `npm run scrape:once -- --ignore-database` - Force send notifications for ALL found units (bypasses database checks)
+- `npm test` - Run all unit tests (83 tests)
+- `npm run build` - Compile TypeScript to JavaScript
+- `npm start` - Start the background worker (production)
+
 ## Key Requirements
 - Only track studios (0BR) and 1-bedrooms
-- Send notifications only for newly available units  
+- Send notifications only for newly available units (unless `--ignore-database` flag used)
 - Run every 2 hours via scheduled worker
 - Use BullMQ for reliable job processing
 - Maintain apartment availability history
+- Concise notification format for mobile push notifications
