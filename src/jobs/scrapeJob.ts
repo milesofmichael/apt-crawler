@@ -44,7 +44,14 @@ export class ScrapeJobScheduler {
       {},
       {
         jobId: jobId || `scrape-${Date.now()}`,
-        delay: 0
+        delay: 0,
+        attempts: 2,
+        backoff: {
+          type: 'exponential',
+          delay: 30000, // 30 seconds
+        },
+        removeOnComplete: 5,
+        removeOnFail: 3
       }
     );
 
@@ -67,7 +74,12 @@ export class ScrapeJobScheduler {
           pattern: '0 */2 * * *', // Every 2 hours at minute 0
           tz: 'America/New_York' // Adjust timezone as needed
         },
-        jobId: 'recurring-scrape'
+        jobId: 'recurring-scrape',
+        attempts: 2,
+        backoff: {
+          type: 'exponential',
+          delay: 30000, // 30 seconds
+        }
       }
     );
 

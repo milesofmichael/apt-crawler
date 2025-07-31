@@ -31,7 +31,10 @@ export class ScrapeWorker {
     // Create BullMQ worker
     this.worker = new Worker('apartment-scraping', this.processJob.bind(this), {
       connection: this.redis,
-      concurrency: 1, // Process one job at a time
+      concurrency: 1,
+      maxStalledCount: 3,              // Retry stalled jobs up to 3 times
+      stalledInterval: 30 * 1000,      // Check for stalled jobs every 30 seconds  
+      lockDuration: 10 * 60 * 1000,    // Lock duration: 10 minutes (job timeout)
     });
 
     this.setupEventHandlers();

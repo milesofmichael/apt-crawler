@@ -70,7 +70,7 @@ export class ScraperService {
         try {
           // Extract bedroom count and title from floorplan
           const titleElement = card.locator('h1, h2, h3, .jd-fp-floorplan-card__title, [class*="title"]');
-          const title = await titleElement.textContent();
+          const title = await titleElement.textContent({ timeout: 5000 }); // 5 second timeout
           
           if (!title) {
             console.log(`Skipping card ${i} - no title found`);
@@ -87,7 +87,7 @@ export class ScraperService {
           }
 
           // Check if units are available by looking for "Starting at $" text
-          const cardText = await card.textContent();
+          const cardText = await card.textContent({ timeout: 5000 });
           const hasStartingAtPrice = cardText && cardText.includes('Starting at $');
           
           if (!hasStartingAtPrice) {
@@ -115,7 +115,7 @@ export class ScraperService {
           scrapedUnits.push(...units);
           
         } catch (error) {
-          console.error(`Error processing floorplan card ${i}:`, error);
+          console.log(`⚠️  Skipping floorplan card ${i} - timeout or error: ${error instanceof Error ? error.message : error}`);
           continue;
         }
       }
@@ -197,7 +197,7 @@ export class ScraperService {
           
           for (let i = 0; i < containerCount; i++) {
             const container = containers.nth(i);
-            const containerText = await container.textContent();
+            const containerText = await container.textContent({ timeout: 5000 });
             
             if (containerText && containerText.includes('#') && containerText.includes('$')) {
               console.log(`Processing container ${i} text: ${containerText.substring(0, 200)}...`);
@@ -238,7 +238,7 @@ export class ScraperService {
       // If we didn't find units in containers, try extracting from the full page text
       if (!foundUnits) {
         console.log('No units found in containers, trying full page text extraction');
-        const pageText = await page.textContent('body');
+        const pageText = await page.textContent('body', { timeout: 10000 });
         
         if (pageText && pageText.includes('WEST-641')) {
           // Specifically look for the example data you provided

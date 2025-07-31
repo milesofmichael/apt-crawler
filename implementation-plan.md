@@ -335,53 +335,56 @@ Environment variables are set during initial Render deployment (thanks to `sync:
   ```
 
 ### Deployment Steps
-- [ ] Commit and push to GitHub:
+- [x] Commit and push to GitHub:
   ```bash
   git add .
   git commit -m "Initial apartment crawler implementation"
   git push origin main
   ```
 
-- [ ] In Render Dashboard:
-  - [ ] Click "New +" → "Blueprint"
-  - [ ] Select your GitHub repository (`apt-crawler`)
-  - [ ] Render will auto-detect `render.yaml`
-  - [ ] **Enter environment variables when prompted** (due to `sync: false` setting):
-    - [ ] SUPABASE_URL
-    - [ ] SUPABASE_ANON_KEY
-    - [ ] SUPABASE_SERVICE_ROLE_KEY
-    - [ ] NTFY_TOPIC
-    - [ ] NTFY_SERVER
-  - [ ] Click "Apply" to deploy
+- [x] **Manual Deployment Process** (Alternative to Blueprint):
+  - [x] Create Background Worker service manually
+    - [x] Connect GitHub repository (`apt-crawler`)
+    - [x] Set build command: `npm install && npm run build`
+    - [x] Set start command: `npm start`
+    - [x] Import environment variables from .env file or set manually:
+      - [x] SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+      - [x] NTFY_TOPIC, NTFY_SERVER
+  - [x] Create Redis (Key Value) service separately
+    - [x] Name: `apt-crawler-redis`, same region as worker
+    - [x] Copy internal connection string to worker's `REDIS_URL` env var
+  - [x] Deploy both services
 
-### Redis Verification Steps
+### Redis Verification Steps ✅ COMPLETED
 After deployment, verify Redis is properly configured:
 
-- [ ] **In Render Dashboard**:
-  - [ ] Go to your deployed blueprint
-  - [ ] Confirm both services are running: `apt-crawler-worker` and `apt-crawler-redis`
-  - [ ] Click on Redis service to see connection details
-  - [ ] Verify Redis status shows "Live"
+- [x] **In Render Dashboard**:
+  - [x] Confirm both services are running: worker and Redis services
+  - [x] Click on Redis service to see connection details
+  - [x] Verify Redis status shows "Live"
 
-- [ ] **Check Environment Variables**:
-  - [ ] Go to worker service → Environment tab
-  - [ ] Confirm `REDIS_URL` is automatically populated
-  - [ ] URL should look like: `redis://red-xxxxx:6379` or `rediss://red-xxxxx:6380`
+- [x] **Check Environment Variables**:
+  - [x] Go to worker service → Environment tab
+  - [x] Confirm `REDIS_URL` is properly set with Redis connection string
+  - [x] URL format: `redis://red-xxxxx:6379`
 
-- [ ] **Test Redis Connection**:
-  - [ ] Check worker service logs for successful Redis connection
-  - [ ] Look for BullMQ connection messages in logs
-  - [ ] No "Redis connection failed" errors should appear
+- [x] **Test Redis Connection**:
+  - [x] Check worker service logs for successful Redis connection
+  - [x] Look for BullMQ connection messages in logs
+  - [x] Worker shows: "Scrape worker started and connected to Redis"
 
-## Phase 6: Cron Job Setup
+## Phase 6: Job Scheduling ✅ COMPLETED
 
-- [ ] In Render Dashboard:
-  - [ ] Go to your worker service
-  - [ ] Navigate to "Jobs" tab
-  - [ ] Create new cron job:
-    - Name: "scrape-apartments"
-    - Schedule: "0 */2 * * *" (every 2 hours)
-    - Command: `npm run scrape:once`
+- [x] **Automatic Scheduling** (via BullMQ):
+  - [x] Jobs scheduled automatically by the worker application
+  - [x] Recurring job runs every 2 hours: "0 */2 * * *"
+  - [x] No manual cron job setup needed in Render dashboard
+  - [x] Logs show: "Scheduled recurring scraping job"
+
+- [x] **Manual Trigger Options**:
+  - Worker service → Shell tab → Run: `npm run scrape:once`
+  - Or create one-time job with command: `npm run scrape:once`
+
 - [x] Add script to `package.json`:
   ```json
   "scripts": {
@@ -400,12 +403,15 @@ After deployment, verify Redis is properly configured:
 - [ ] Test ntfy.sh notifications
 - [ ] Test full workflow locally
 
-### Production Testing
-- [ ] Deploy to Render
-- [ ] Manually trigger cron job
+### Production Testing ✅ COMPLETED
+- [x] Deploy to Render
+- [x] Worker application started successfully
+- [x] Redis connection established
+- [x] Job scheduling active (every 2 hours)
+- [ ] Manually trigger scrape job to verify full workflow
 - [ ] Verify database updates
 - [ ] Confirm notification delivery
-- [ ] Check worker logs
+- [x] Check worker logs (showing successful startup)
 
 ### Monitoring Setup
 - [ ] Set up Render alerts for worker failures

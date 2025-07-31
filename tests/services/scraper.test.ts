@@ -6,7 +6,8 @@ const mockPage = {
   goto: jest.fn(),
   locator: jest.fn(),
   close: jest.fn(),
-  waitForTimeout: jest.fn()
+  waitForTimeout: jest.fn(),
+  textContent: jest.fn()
 };
 
 const mockLocator = {
@@ -240,6 +241,152 @@ describe('ScraperService', () => {
       // Verify cleanup was called
       expect(mockContext.close).toHaveBeenCalled();
       expect(mockBrowser.close).toHaveBeenCalled();
+    });
+  });
+
+  describe('timeout handling', () => {
+    beforeEach(async () => {
+      await scraperService.initialize();
+    });
+
+    afterEach(async () => {
+      await scraperService.cleanup();
+    });
+
+    it('should handle timeout when extracting card title', async () => {
+      // Mock card with timeout on title extraction
+      const mockCard = { ...mockLocator };
+      const mockTitleLocator = { ...mockLocator };
+      
+      mockTitleLocator.textContent.mockRejectedValue(new Error('locator.textContent: Timeout 5000ms exceeded'));
+      mockCard.locator.mockReturnValue(mockTitleLocator);
+      mockCard.textContent.mockResolvedValue('Some card text');
+      
+      mockLocator.count.mockResolvedValue(1);
+      mockLocator.nth.mockReturnValue(mockCard);
+
+      const result = await scraperService.scrapeApartments();
+
+      expect(result).toHaveLength(0);
+      expect(mockTitleLocator.textContent).toHaveBeenCalledWith({ timeout: 5000 });
+    });
+
+    it('should handle timeout when extracting card text content', async () => {
+      // Mock card with timeout on text content extraction
+      const mockCard = { ...mockLocator };
+      const mockTitleLocator = { ...mockLocator };
+      
+      mockTitleLocator.textContent.mockResolvedValue('Studio Apartment');
+      mockCard.locator.mockReturnValue(mockTitleLocator);
+      mockCard.textContent.mockRejectedValue(new Error('locator.textContent: Timeout 5000ms exceeded'));
+      
+      mockLocator.count.mockResolvedValue(1);
+      mockLocator.nth.mockReturnValue(mockCard);
+
+      const result = await scraperService.scrapeApartments();
+
+      expect(result).toHaveLength(0);
+      expect(mockCard.textContent).toHaveBeenCalledWith({ timeout: 5000 });
+    });
+
+    it('should handle errors when counting availability buttons', async () => {
+      // Mock the private method to test button count error handling  
+      const service = scraperService as any;
+      const mockButtonLocator = { ...mockLocator };
+      
+      mockButtonLocator.count.mockRejectedValue(new Error('Element not found'));
+      mockPage.locator.mockReturnValue(mockButtonLocator);
+
+      const result = await service.scrapeFloorplanDetails(
+        mockPage, 
+        'https://example.com/floorplan', 
+        'Test Floorplan', 
+        1
+      );
+
+      expect(result).toHaveLength(0);
+      expect(mockButtonLocator.count).toHaveBeenCalled();
+    });
+
+    it('should handle errors when counting containers', async () => {
+      // Mock the private method to test container count error handling
+      const service = scraperService as any;
+      const mockButtonLocator = { ...mockLocator };
+      const mockContainerLocator = { ...mockLocator };
+      
+      // Mock button exists but container count fails
+      mockButtonLocator.count.mockResolvedValue(0);
+      mockContainerLocator.count.mockRejectedValue(new Error('Element not accessible'));
+      
+      mockPage.locator.mockImplementation((selector: string) => {
+        if (selector.includes('availability')) return mockButtonLocator;
+        return mockContainerLocator;
+      });
+
+      const result = await service.scrapeFloorplanDetails(
+        mockPage, 
+        'https://example.com/floorplan', 
+        'Test Floorplan', 
+        1
+      );
+
+      expect(result).toHaveLength(0);
+      expect(mockContainerLocator.count).toHaveBeenCalled();
+    });
+
+    it('should handle timeout when extracting full page text', async () => {
+      // Mock the private method to test full page text timeout
+      const service = scraperService as any;
+      const mockButtonLocator = { ...mockLocator };
+      const mockContainerLocator = { ...mockLocator };
+      
+      // Mock no button, no containers, page text times out
+      mockButtonLocator.count.mockResolvedValue(0);
+      mockContainerLocator.count.mockResolvedValue(0);
+      mockPage.textContent.mockRejectedValue(new Error('page.textContent: Timeout 10000ms exceeded'));
+      
+      mockPage.locator.mockImplementation((selector: string) => {
+        if (selector.includes('availability')) return mockButtonLocator;
+        return mockContainerLocator;
+      });
+
+      const result = await service.scrapeFloorplanDetails(
+        mockPage, 
+        'https://example.com/floorplan', 
+        'Test Floorplan', 
+        1
+      );
+
+      expect(result).toHaveLength(0);
+      expect(mockPage.textContent).toHaveBeenCalledWith('body', { timeout: 10000 });
+    });
+
+    it('should continue processing other cards when one times out', async () => {
+      // Mock multiple cards where first times out, second succeeds
+      const mockTimeoutCard = { ...mockLocator };
+      const mockSuccessCard = { ...mockLocator };
+      
+      const mockTimeoutTitle = { ...mockLocator };
+      const mockSuccessTitle = { ...mockLocator };
+      
+      mockTimeoutTitle.textContent.mockRejectedValue(new Error('Timeout'));
+      mockSuccessTitle.textContent.mockResolvedValue('Studio - Available');
+      
+      mockTimeoutCard.locator.mockReturnValue(mockTimeoutTitle);
+      mockSuccessCard.locator.mockReturnValue(mockSuccessTitle);
+      mockSuccessCard.textContent.mockResolvedValue('Starting at $1500');
+      
+      mockLocator.count.mockResolvedValue(2);
+      mockLocator.nth.mockImplementation((index: number) => {
+        return index === 0 ? mockTimeoutCard : mockSuccessCard;
+      });
+
+      const result = await scraperService.scrapeApartments();
+
+      // Should process second card successfully despite first timing out
+      expect(result).toHaveLength(0); // No units since we didn't mock full floorplan details
+      expect(mockTimeoutTitle.textContent).toHaveBeenCalledWith({ timeout: 5000 });
+      expect(mockSuccessTitle.textContent).toHaveBeenCalledWith({ timeout: 5000 });
     });
   });
 
