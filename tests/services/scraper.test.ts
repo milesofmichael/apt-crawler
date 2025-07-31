@@ -7,7 +7,8 @@ const mockPage = {
   locator: jest.fn(),
   close: jest.fn(),
   waitForTimeout: jest.fn(),
-  textContent: jest.fn()
+  textContent: jest.fn(),
+  evaluate: jest.fn()
 };
 
 const mockLocator = {
@@ -16,7 +17,8 @@ const mockLocator = {
   locator: jest.fn(),
   textContent: jest.fn(),
   getAttribute: jest.fn(),
-  first: jest.fn()
+  first: jest.fn(),
+  scrollIntoViewIfNeeded: jest.fn()
 };
 
 const mockContext = {
@@ -387,6 +389,159 @@ describe('ScraperService', () => {
       expect(result).toHaveLength(0); // No units since we didn't mock full floorplan details
       expect(mockTimeoutTitle.textContent).toHaveBeenCalledWith({ timeout: 5000 });
       expect(mockSuccessTitle.textContent).toHaveBeenCalledWith({ timeout: 5000 });
+    });
+  });
+
+  describe('two-phase scraping', () => {
+    beforeEach(async () => {
+      await scraperService.initialize();
+    });
+
+    afterEach(async () => {
+      await scraperService.cleanup();
+    });
+
+    it('should collect qualifying floorplans first, then process them separately', async () => {
+      // Mock multiple cards with different scenarios
+      const mockCard1 = { ...mockLocator };
+      const mockCard2 = { ...mockLocator };
+      
+      const mockTitle1 = { ...mockLocator };
+      const mockTitle2 = { ...mockLocator };
+      
+      mockTitle1.textContent.mockResolvedValue('The Dellwood');
+      mockTitle2.textContent.mockResolvedValue('The Gateway');
+      
+      mockCard1.locator.mockReturnValue(mockTitle1);
+      mockCard1.textContent.mockResolvedValue('Starting at $1500');
+      mockCard1.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
+      
+      mockCard2.locator.mockReturnValue(mockTitle2);
+      mockCard2.textContent.mockResolvedValue('Starting at $2000');
+      mockCard2.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
+      
+      mockLocator.count.mockResolvedValue(2);
+      mockLocator.nth.mockImplementation((index: number) => {
+        return index === 0 ? mockCard1 : mockCard2;
+      });
+
+      // Mock the scrapeFloorplanDetails method to return empty results
+      const scraperServiceSpy = jest.spyOn(scraperService as any, 'scrapeFloorplanDetails')
+        .mockResolvedValue([]);
+
+      const result = await scraperService.scrapeApartments();
+
+      // Should have called scrapeFloorplanDetails for both qualifying floorplans
+      expect(scraperServiceSpy).toHaveBeenCalledTimes(2);
+      expect(scraperServiceSpy).toHaveBeenCalledWith(
+        mockPage, 
+        'https://flatsatpcm.com/floorplans/the-dellwood/', 
+        'The Dellwood', 
+        0
+      );
+      expect(scraperServiceSpy).toHaveBeenCalledWith(
+        mockPage, 
+        'https://flatsatpcm.com/floorplans/the-gateway/', 
+        'The Gateway', 
+        0
+      );
+
+      expect(result).toHaveLength(0);
+      
+      scraperServiceSpy.mockRestore();
+    });
+
+    it('should handle errors in individual floorplan processing without affecting others', async () => {
+      // Mock two qualifying floorplans
+      const mockCard1 = { ...mockLocator };
+      const mockCard2 = { ...mockLocator };
+      
+      const mockTitle1 = { ...mockLocator };
+      const mockTitle2 = { ...mockLocator };
+      
+      mockTitle1.textContent.mockResolvedValue('The Dellwood');
+      mockTitle2.textContent.mockResolvedValue('The Gateway');
+      
+      mockCard1.locator.mockReturnValue(mockTitle1);
+      mockCard1.textContent.mockResolvedValue('Starting at $1500');
+      mockCard1.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
+      
+      mockCard2.locator.mockReturnValue(mockTitle2);
+      mockCard2.textContent.mockResolvedValue('Starting at $2000');
+      mockCard2.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
+      
+      mockLocator.count.mockResolvedValue(2);
+      mockLocator.nth.mockImplementation((index: number) => {
+        return index === 0 ? mockCard1 : mockCard2;
+      });
+
+      // Mock scrapeFloorplanDetails to fail for first floorplan, succeed for second
+      const scraperServiceSpy = jest.spyOn(scraperService as any, 'scrapeFloorplanDetails')
+        .mockImplementation((page, url, title) => {
+          if (title === 'The Dellwood') {
+            throw new Error('Network error');
+          }
+          return Promise.resolve([]);
+        });
+
+      const result = await scraperService.scrapeApartments();
+
+      // Should have attempted both floorplans
+      expect(scraperServiceSpy).toHaveBeenCalledTimes(2);
+      expect(result).toHaveLength(0);
+      
+      scraperServiceSpy.mockRestore();
+    });
+
+    it('should properly identify and collect qualifying floorplans based on pricing text', async () => {
+      // Mock cards with different pricing scenarios
+      const mockCard1 = { ...mockLocator }; // No pricing
+      const mockCard2 = { ...mockLocator }; // Has "Starting at $"
+      const mockCard3 = { ...mockLocator }; // Wrong bedroom count
+      
+      const mockTitle1 = { ...mockLocator };
+      const mockTitle2 = { ...mockLocator };
+      const mockTitle3 = { ...mockLocator };
+      
+      mockTitle1.textContent.mockResolvedValue('The Expensive');
+      mockTitle2.textContent.mockResolvedValue('The Available');
+      mockTitle3.textContent.mockResolvedValue('The Two Bedroom');
+      
+      mockCard1.locator.mockReturnValue(mockTitle1);
+      mockCard1.textContent.mockResolvedValue('Waitlist Only');
+      mockCard1.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
+      
+      mockCard2.locator.mockReturnValue(mockTitle2);
+      mockCard2.textContent.mockResolvedValue('Starting at $1500');
+      mockCard2.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
+      
+      mockCard3.locator.mockReturnValue(mockTitle3);
+      mockCard3.textContent.mockResolvedValue('Starting at $2000');
+      mockCard3.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
+      
+      mockLocator.count.mockResolvedValue(3);
+      mockLocator.nth.mockImplementation((index: number) => {
+        if (index === 0) return mockCard1;
+        if (index === 1) return mockCard2;
+        return mockCard3;
+      });
+
+      // Mock the scrapeFloorplanDetails method
+      const scraperServiceSpy = jest.spyOn(scraperService as any, 'scrapeFloorplanDetails')
+        .mockResolvedValue([]);
+
+      const result = await scraperService.scrapeApartments();
+
+      // Should only process "The Available" (has pricing and is studio/1BR)
+      expect(scraperServiceSpy).toHaveBeenCalledTimes(1);
+      expect(scraperServiceSpy).toHaveBeenCalledWith(
+        mockPage, 
+        'https://flatsatpcm.com/floorplans/the-available/', 
+        'The Available', 
+        0
+      );
+      
+      scraperServiceSpy.mockRestore();
     });
   });
 

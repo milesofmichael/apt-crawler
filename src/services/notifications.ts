@@ -80,15 +80,12 @@ export class NotificationService {
    * Format notification for a single apartment
    */
   private formatSingleApartmentNotification(apartment: Apartment): { title: string; message: string } {
-    const bedroomLabel = apartment.bedroomCount === 0 ? 'Studio' : `${apartment.bedroomCount}BR`;
     const dateStr = apartment.availabilityDate 
-      ? this.formatDate(apartment.availabilityDate)
+      ? this.formatDateForMessage(apartment.availabilityDate)
       : 'Date TBD';
 
-    const title = `New ${bedroomLabel} Available!`;
-    const message = `${apartment.unitNumber}: $${apartment.rent.toLocaleString()}/mo
-Available: ${dateStr}
-Floorplan: ${apartment.floorplanName}`;
+    const title = 'New Unit Available';
+    const message = `${apartment.floorplanName} - #${apartment.unitNumber} - $${apartment.rent.toLocaleString()} - Available ${dateStr}`;
 
     return { title, message };
   }
@@ -97,22 +94,31 @@ Floorplan: ${apartment.floorplanName}`;
    * Format notification for multiple apartments
    */
   private formatMultipleApartmentsNotification(apartments: Apartment[]): { title: string; message: string } {
-    const title = `🏠 ${apartments.length} New Apartments Available!`;
+    const title = `${apartments.length} New Units Available`;
     
-    const unitLines = apartments.map(apt => {
-      const bedroomLabel = apt.bedroomCount === 0 ? 'Studio' : `${apt.bedroomCount}BR`;
-      const dateStr = apt.availabilityDate 
-        ? this.formatDate(apt.availabilityDate)
-        : 'TBD';
-      
-      return `${bedroomLabel} ${apt.unitNumber}: $${apt.rent.toLocaleString()} (${dateStr})`;
-    }).join('\n');
+    if (apartments.length <= 3) {
+      // For 3 or fewer units, show each one on a separate line
+      const unitLines = apartments.map(apt => {
+        const dateStr = apt.availabilityDate 
+          ? this.formatDateForMessage(apt.availabilityDate)
+          : 'TBD';
+        
+        return `${apt.floorplanName} - #${apt.unitNumber} - $${apt.rent.toLocaleString()} - Available ${dateStr}`;
+      }).join(' | ');
 
-    const message = `${unitLines}
+      return { title, message: unitLines };
+    } else {
+      // For more than 3 units, show a summary
+      const studios = apartments.filter(apt => apt.bedroomCount === 0).length;
+      const oneBedrooms = apartments.filter(apt => apt.bedroomCount === 1).length;
+      const unitSummary = [
+        studios > 0 ? `${studios} studio${studios > 1 ? 's' : ''}` : '',
+        oneBedrooms > 0 ? `${oneBedrooms} 1BR${oneBedrooms > 1 ? 's' : ''}` : ''
+      ].filter(Boolean).join(', ');
 
-View all floorplans at flatsatpcm.com`;
-
-    return { title, message };
+      const message = `${unitSummary} - View all at flatsatpcm.com/floorplans`;
+      return { title, message };
+    }
   }
 
   /**
@@ -122,6 +128,15 @@ View all floorplans at flatsatpcm.com`;
     const month = date.getMonth() + 1;
     const day = date.getDate();
     return `${month}/${day}`;
+  }
+
+  /**
+   * Format date for message display (MMM DD format)
+   */
+  private formatDateForMessage(date: Date): string {
+    const month = date.toLocaleDateString('en-US', { month: 'short' });
+    const day = date.getDate().toString().padStart(2, '0');
+    return `${month} ${day}`;
   }
 
   /**

@@ -63,21 +63,20 @@ describe('NotificationService', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: expect.stringContaining('New 1BR Available!')
+          body: expect.stringContaining('New Unit Available')
         })
       );
 
       const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(callBody.title).toBe('New 1BR Available!');
-      expect(callBody.message).toContain('WEST-641: $1,991/mo');
-      expect(callBody.message).toMatch(/Available: 9\/(27|28)/);
-      expect(callBody.message).toContain('Floorplan: The Dellwood');
+      expect(callBody.title).toBe('New Unit Available');
+      expect(callBody.message).toContain('The Dellwood - #WEST-641 - $1,991 - Available Sep');
+      expect(callBody.message).toMatch(/Sep (27|28)/);
       expect(callBody.tags).toEqual(['house', 'apartment']);
       expect(callBody.priority).toBe(4);
       expect(callBody.actions).toEqual([{
         action: 'view',
         label: 'View Floorplan',
-        url: 'https://flatsatpcm.com/floorplans/the-dellwood/'
+        url: 'https://flatsatpcm.com/floorplans/'
       }]);
     });
 
@@ -96,8 +95,8 @@ describe('NotificationService', () => {
       await notificationService.sendNewApartmentNotification([studioApartment]);
 
       const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(callBody.title).toBe('New Studio Available!');
-      expect(callBody.message).toContain('STUDIO-101');
+      expect(callBody.title).toBe('New Unit Available');
+      expect(callBody.message).toContain('The Dellwood - #STUDIO-101');
     });
 
     it('should send notification for multiple apartments', async () => {
@@ -120,10 +119,10 @@ describe('NotificationService', () => {
       await notificationService.sendNewApartmentNotification(apartments);
 
       const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(callBody.title).toBe('🏠 2 New Apartments Available!');
-      expect(callBody.message).toContain('1BR WEST-641: $1,991');
-      expect(callBody.message).toContain('Studio EAST-502: $1,750');
-      expect(callBody.message).toContain('View all floorplans at flatsatpcm.com');
+      expect(callBody.title).toBe('2 New Units Available');
+      expect(callBody.message).toContain('The Dellwood - #WEST-641 - $1,991');
+      expect(callBody.message).toContain('The Dellwood - #EAST-502 - $1,750');
+      expect(callBody.message).toContain(' | ');
       expect(callBody.actions).toEqual([{
         action: 'view',
         label: 'View All',
@@ -145,7 +144,7 @@ describe('NotificationService', () => {
       await notificationService.sendNewApartmentNotification([apartmentNoDate]);
 
       const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(callBody.message).toContain('Available: Date TBD');
+      expect(callBody.message).toContain('Available Date TBD');
     });
 
     it('should do nothing when no apartments provided', async () => {
@@ -184,7 +183,200 @@ describe('NotificationService', () => {
       await notificationService.sendNewApartmentNotification([expensiveApartment]);
 
       const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(callBody.message).toContain('$2,500/mo');
+      expect(callBody.message).toContain('$2,500');
+    });
+
+    it('should format multiple apartments with pipe separator when 3 or fewer', async () => {
+      const apartments: Apartment[] = [
+        {
+          unitNumber: 'WEST-641',
+          floorplanName: 'The Dellwood',
+          bedroomCount: 1,
+          rent: 1991,
+          availabilityDate: new Date('2024-09-28')
+        },
+        {
+          unitNumber: 'EAST-502',
+          floorplanName: 'The Gateway',
+          bedroomCount: 0,
+          rent: 1750,
+          availabilityDate: new Date('2024-10-01')
+        },
+        {
+          unitNumber: 'NORTH-300',
+          floorplanName: 'The Tower',
+          bedroomCount: 1,
+          rent: 2100,
+          availabilityDate: new Date('2024-09-15')
+        }
+      ];
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200
+      });
+
+      await notificationService.sendNewApartmentNotification(apartments);
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.title).toBe('3 New Units Available');
+      expect(callBody.message).toContain('The Dellwood - #WEST-641 - $1,991');
+      expect(callBody.message).toContain('The Gateway - #EAST-502 - $1,750');
+      expect(callBody.message).toContain('The Tower - #NORTH-300 - $2,100');
+      expect(callBody.message).toContain(' | ');
+      // Should not contain newlines
+      expect(callBody.message).not.toContain('\n');
+    });
+
+    it('should format many apartments as summary when more than 3', async () => {
+      const apartments: Apartment[] = [
+        {
+          unitNumber: 'WEST-641',
+          floorplanName: 'The Dellwood',
+          bedroomCount: 1,
+          rent: 1991,
+          availabilityDate: new Date('2024-09-28')
+        },
+        {
+          unitNumber: 'EAST-502',
+          floorplanName: 'The Gateway',
+          bedroomCount: 0,
+          rent: 1750,
+          availabilityDate: new Date('2024-10-01')
+        },
+        {
+          unitNumber: 'NORTH-300',
+          floorplanName: 'The Tower',
+          bedroomCount: 1,
+          rent: 2100,
+          availabilityDate: new Date('2024-09-15')
+        },
+        {
+          unitNumber: 'SOUTH-200',
+          floorplanName: 'The Loft',
+          bedroomCount: 0,
+          rent: 1650,
+          availabilityDate: new Date('2024-09-20')
+        },
+        {
+          unitNumber: 'CENTER-400',
+          floorplanName: 'The Plaza',
+          bedroomCount: 1,
+          rent: 2200,
+          availabilityDate: new Date('2024-10-05')
+        }
+      ];
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200
+      });
+
+      await notificationService.sendNewApartmentNotification(apartments);
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.title).toBe('5 New Units Available');
+      expect(callBody.message).toContain('2 studios, 3 1BRs');
+      expect(callBody.message).toContain('flatsatpcm.com/floorplans');
+      // Should not contain newlines
+      expect(callBody.message).not.toContain('\n');
+    });
+
+    it('should handle only studios in summary format', async () => {
+      const apartments: Apartment[] = [
+        {
+          unitNumber: 'STUDIO-1',
+          floorplanName: 'Studio A',
+          bedroomCount: 0,
+          rent: 1500,
+          availabilityDate: new Date('2024-09-28')
+        },
+        {
+          unitNumber: 'STUDIO-2',
+          floorplanName: 'Studio B',
+          bedroomCount: 0,
+          rent: 1600,
+          availabilityDate: new Date('2024-09-29')
+        },
+        {
+          unitNumber: 'STUDIO-3',
+          floorplanName: 'Studio C',
+          bedroomCount: 0,
+          rent: 1700,
+          availabilityDate: new Date('2024-09-30')
+        },
+        {
+          unitNumber: 'STUDIO-4',
+          floorplanName: 'Studio D',
+          bedroomCount: 0,
+          rent: 1800,
+          availabilityDate: new Date('2024-10-01')
+        }
+      ];
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200
+      });
+
+      await notificationService.sendNewApartmentNotification(apartments);
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.title).toBe('4 New Units Available');
+      expect(callBody.message).toContain('4 studios');
+      expect(callBody.message).not.toContain('1BR');
+    });
+
+    it('should handle only 1-bedrooms in summary format', async () => {
+      const apartments: Apartment[] = [
+        {
+          unitNumber: 'BR1-1',
+          floorplanName: '1BR A',
+          bedroomCount: 1,
+          rent: 2000,
+          availabilityDate: new Date('2024-09-28')
+        },
+        {
+          unitNumber: 'BR1-2',
+          floorplanName: '1BR B',
+          bedroomCount: 1,
+          rent: 2100,
+          availabilityDate: new Date('2024-09-29')
+        },
+        {
+          unitNumber: 'BR1-3',
+          floorplanName: '1BR C',
+          bedroomCount: 1,
+          rent: 2200,
+          availabilityDate: new Date('2024-09-30')
+        },
+        {
+          unitNumber: 'BR1-4',
+          floorplanName: '1BR D',
+          bedroomCount: 1,
+          rent: 2300,
+          availabilityDate: new Date('2024-10-01')
+        },
+        {
+          unitNumber: 'BR1-5',
+          floorplanName: '1BR E',
+          bedroomCount: 1,
+          rent: 2400,
+          availabilityDate: new Date('2024-10-02')
+        }
+      ];
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200
+      });
+
+      await notificationService.sendNewApartmentNotification(apartments);
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.title).toBe('5 New Units Available');
+      expect(callBody.message).toContain('5 1BRs');
+      expect(callBody.message).not.toContain('studio');
     });
   });
 
@@ -366,6 +558,37 @@ describe('NotificationService', () => {
         
         // Check that format is M/D pattern, account for timezone differences  
         expect(formatted).toMatch(/^1\/(4|5)$/);
+      });
+    });
+
+    describe('formatDateForMessage', () => {
+      it('should format date correctly for messages', () => {
+        const service = notificationService as any;
+        
+        const date = new Date('2024-09-28T12:00:00Z');
+        const formatted = service.formatDateForMessage(date);
+        
+        // Check that format is "MMM DD" pattern, account for timezone differences
+        expect(formatted).toMatch(/^Sep (27|28)$/);
+      });
+
+      it('should handle single digit dates with padding', () => {
+        const service = notificationService as any;
+        
+        const date = new Date('2024-01-05T12:00:00Z');
+        const formatted = service.formatDateForMessage(date);
+        
+        // Check that format is "MMM DD" pattern with padding, account for timezone differences  
+        expect(formatted).toMatch(/^Jan (04|05)$/);
+      });
+
+      it('should handle different months correctly', () => {
+        const service = notificationService as any;
+        
+        const date = new Date('2024-12-15T12:00:00Z');
+        const formatted = service.formatDateForMessage(date);
+        
+        expect(formatted).toMatch(/^Dec (14|15)$/);
       });
     });
   });

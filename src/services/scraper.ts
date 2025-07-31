@@ -58,16 +58,36 @@ export class ScraperService {
       // Wait for content to load
       await page.waitForTimeout(2000);
 
+      // Scroll to bottom to trigger lazy loading of all cards
+      console.log('Scrolling to load all floorplan cards...');
+      await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+      await page.waitForTimeout(3000); // Wait for lazy loading
+
+      // Scroll back to top
+      await page.evaluate(() => {
+        window.scrollTo(0, 0);
+      });
+      await page.waitForTimeout(1000);
+
       // Find all floorplan cards
       console.log('Finding floorplan cards...');
       const floorplanCards = page.locator('.jd-fp-floorplan-card');
       const cardCount = await floorplanCards.count();
       console.log(`Found ${cardCount} floorplan cards`);
 
+      // Phase 1: Collect all qualifying floorplans without navigating away
+      const qualifyingFloorplans: Array<{title: string, url: string, bedroomCount: number}> = [];
+      
       for (let i = 0; i < cardCount; i++) {
         const card = floorplanCards.nth(i);
         
         try {
+          // Scroll card into view to ensure it's loaded
+          await card.scrollIntoViewIfNeeded({ timeout: 3000 });
+          await page.waitForTimeout(500); // Brief pause for loading
+          
           // Extract bedroom count and title from floorplan
           const titleElement = card.locator('h1, h2, h3, .jd-fp-floorplan-card__title, [class*="title"]');
           const title = await titleElement.textContent({ timeout: 5000 }); // 5 second timeout
@@ -108,14 +128,30 @@ export class ScraperService {
           
           console.log(`📍 Built URL for ${title}: ${fullUrl}`);
           
-          console.log(`Processing available ${bedroomCount}BR floorplan: ${title}`);
-          
-          // Visit floorplan detail page to get specific unit info
-          const units = await this.scrapeFloorplanDetails(page, fullUrl, title, bedroomCount);
-          scrapedUnits.push(...units);
+          // Add to qualifying list instead of processing immediately
+          qualifyingFloorplans.push({
+            title: title.trim(),
+            url: fullUrl,
+            bedroomCount
+          });
           
         } catch (error) {
           console.log(`⚠️  Skipping floorplan card ${i} - timeout or error: ${error instanceof Error ? error.message : error}`);
+          continue;
+        }
+      }
+
+      console.log(`\n🎯 Found ${qualifyingFloorplans.length} qualifying floorplans to process`);
+
+      // Phase 2: Visit each qualifying floorplan individually  
+      for (const floorplan of qualifyingFloorplans) {
+        console.log(`\n🏠 Processing ${floorplan.bedroomCount}BR floorplan: ${floorplan.title}`);
+        
+        try {
+          const units = await this.scrapeFloorplanDetails(page, floorplan.url, floorplan.title, floorplan.bedroomCount);
+          scrapedUnits.push(...units);
+        } catch (error) {
+          console.log(`⚠️  Failed to process ${floorplan.title}: ${error instanceof Error ? error.message : error}`);
           continue;
         }
       }
