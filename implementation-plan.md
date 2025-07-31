@@ -11,26 +11,25 @@
 ## Phase 1: Account Setup & Prerequisites
 
 ### GitHub Repository Setup
-- [ ] Create new GitHub repository named `apt-crawler`
-- [ ] Initialize with README.md
-- [ ] Clone repository locally
+- [x] Create new GitHub repository named `apt-crawler`
+- [x] Initialize with README.md
+- [x] Clone repository locally
 - [ ] Set up branch protection rules (optional)
 
-### GitHub Secrets Configuration
-Navigate to your GitHub repo → Settings → Secrets and variables → Actions, then add:
+### Environment Variables Setup
+**No GitHub secrets needed!** Render will prompt you for these during initial deployment:
+
 - [ ] `SUPABASE_URL` - Your Supabase project URL
-- [ ] `SUPABASE_ANON_KEY` - Your Supabase anonymous key  
+- [ ] `SUPABASE_ANON_KEY` - Your Supabase anonymous key
 - [ ] `SUPABASE_SERVICE_ROLE_KEY` - Your Supabase service role key
-- [ ] `TWILIO_ACCOUNT_SID` - Your Twilio Account SID
-- [ ] `TWILIO_AUTH_TOKEN` - Your Twilio Auth Token
-- [ ] `TWILIO_PHONE_NUMBER` - Your Twilio phone number (e.g., +1234567890)
-- [ ] `MY_PHONE_NUMBER` - Your personal phone number (+15615452977)
+- [ ] `NTFY_TOPIC` - Your ntfy.sh topic name
+- [ ] `NTFY_SERVER` - ntfy.sh server URL
 
 ### Render.com Setup
 - [ ] Create Render.com account (free tier available)
 - [ ] Connect GitHub account to Render
-- [ ] Create Redis instance for BullMQ (free trial tier)
-- [ ] Note Redis connection URL for GitHub secrets
+- [ ] **Note**: Redis instance will be created automatically via render.yaml blueprint (free trial tier)
+- [ ] **Note**: REDIS_URL environment variable is automatically configured via `fromService` property
 - [ ] **Note**: Payment method only required if you exceed free tier limits
 
 ### Supabase Setup
@@ -41,16 +40,17 @@ Navigate to your GitHub repo → Settings → Secrets and variables → Actions,
   - [ ] Service role key (for `SUPABASE_SERVICE_ROLE_KEY`)
 - [ ] Enable Row Level Security (RLS) on tables
 
-### Twilio Setup
-- [ ] Verify Twilio account has SMS credits
-- [ ] Go to Console → Account Info to get:
-  - [ ] Account SID (for `TWILIO_ACCOUNT_SID`)
-  - [ ] Auth Token (for `TWILIO_AUTH_TOKEN`)
-- [ ] Go to Phone Numbers to get your Twilio number (for `TWILIO_PHONE_NUMBER`)
+### Ntfy.sh Setup
+- [x] No account required - ntfy.sh is free and open
+- [x] Choose a unique topic name: `your-unique-topic-name`
+- [x] Subscribe to topic via:
+  - Web: https://ntfy.sh/your-unique-topic-name
+  - Mobile app: Download ntfy app and subscribe to topic
+  - Command line: `curl -s ntfy.sh/your-unique-topic-name/json`
 
 ## Phase 2: Project Initialization
 
-- [ ] Initialize Node.js project:
+- [x] Initialize Node.js project:
   ```bash
   mkdir apt-crawler && cd apt-crawler
   npm init -y
@@ -58,13 +58,13 @@ Navigate to your GitHub repo → Settings → Secrets and variables → Actions,
   npx tsc --init
   ```
 
-- [ ] Install dependencies:
+- [x] Install dependencies:
   ```bash
-  npm install playwright @supabase/supabase-js bullmq ioredis twilio dotenv
-  npm install -D @types/bullmq nodemon
+  npm install playwright @supabase/supabase-js bullmq ioredis dotenv
+  npm install -D jest @types/jest ts-jest @jest/globals nodemon
   ```
 
-- [ ] Create project structure:
+- [x] Create project structure:
   ```
   apt-crawler/
   ├── src/
@@ -86,13 +86,13 @@ Navigate to your GitHub repo → Settings → Secrets and variables → Actions,
   └── render.yaml
   ```
 
-- [ ] Copy `.env.example` to `.env` for local development:
+- [x] Copy `.env.example` to `.env` for local development:
   ```bash
   cp .env.example .env
   ```
-- [ ] Fill in your local `.env` file with actual values (for development only)
+- [x] Fill in your local `.env` file with actual values (for development only)
 
-- [ ] Configure TypeScript (`tsconfig.json`):
+- [x] Configure TypeScript (`tsconfig.json`):
   ```json
   {
     "compilerOptions": {
@@ -112,8 +112,8 @@ Navigate to your GitHub repo → Settings → Secrets and variables → Actions,
 
 ## Phase 3: Database Schema Creation
 
-- [ ] Connect to Supabase SQL Editor
-- [ ] Create apartments table:
+- [x] Connect to Supabase SQL Editor
+- [x] Create apartments table:
   ```sql
   CREATE TABLE apartments (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -134,7 +134,7 @@ Navigate to your GitHub repo → Settings → Secrets and variables → Actions,
   CREATE INDEX idx_bedroom_count ON apartments(bedroom_count);
   ```
 
-- [ ] Create scraping logs table:
+- [x] Create scraping logs table:
   ```sql
   CREATE TABLE scraping_logs (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -151,7 +151,7 @@ Navigate to your GitHub repo → Settings → Secrets and variables → Actions,
 ## Phase 4: Core Implementation
 
 ### Types Definition
-- [ ] Create `src/types/apartment.ts`:
+- [x] Create `src/types/apartment.ts`:
   ```typescript
   export interface Apartment {
     unitNumber: string;
@@ -174,7 +174,7 @@ Navigate to your GitHub repo → Settings → Secrets and variables → Actions,
   ```
 
 ### Web Scraper Service
-- [ ] Create `src/services/scraper.ts`:
+- [x] Create `src/services/scraper.ts`:
   - Initialize Playwright browser
   - Navigate to https://flatsatpcm.com/floorplans/
   - Find all floorplan cards
@@ -187,7 +187,7 @@ Navigate to your GitHub repo → Settings → Secrets and variables → Actions,
   - Return array of ScrapedUnit objects
 
 ### Database Service
-- [ ] Create `src/services/database.ts`:
+- [x] Create `src/services/database.ts`:
   - Initialize Supabase client
   - Implement `getActiveApartments()` - fetch all available units
   - Implement `findNewUnits()` - compare scraped vs existing
@@ -196,20 +196,22 @@ Navigate to your GitHub repo → Settings → Secrets and variables → Actions,
   - Implement `logScrapeRun()` - log scraping results
 
 ### Notification Service
-- [ ] Create `src/services/notifications.ts`:
-  - Initialize Twilio client
-  - Implement `sendNewApartmentSMS()`:
+- [x] Create `src/services/notifications.ts`:
+  - Use ntfy.sh for push notifications (no API keys needed)
+  - Implement `sendNewApartmentNotification()`:
     ```
-    New 1BR available!
-    WEST-641: $1,991/mo
+    Title: New 1BR Available!
+    Message: WEST-641: $1,991/mo
     Available: 9/28
-    View: https://flatsatpcm.com/floorplans/the-dellwood/
+    Floorplan: The Dellwood
     ```
-  - Batch multiple units into single SMS if needed
-  - Handle Twilio errors gracefully
+  - Include action buttons for direct links to floorplans
+  - Support rich notifications with emojis and priority levels
+  - Handle multiple apartments in single notification
+  - Batch multiple units with summary format
 
 ### BullMQ Worker
-- [ ] Create `src/workers/scrapeWorker.ts`:
+- [x] Create `src/workers/scrapeWorker.ts`:
   - Set up BullMQ worker
   - Process scraping jobs:
     1. Log start time
@@ -222,25 +224,83 @@ Navigate to your GitHub repo → Settings → Secrets and variables → Actions,
   - Set job timeout to 5 minutes
 
 ### Job Scheduler
-- [ ] Create `src/jobs/scrapeJob.ts`:
+- [x] Create `src/jobs/scrapeJob.ts`:
   - Set up BullMQ queue
   - Add recurring job (cron: "0 */2 * * *")
   - Implement job de-duplication
 
 ### Main Entry Point
-- [ ] Create `src/index.ts`:
+- [x] Create `src/index.ts`:
   - Initialize Redis connection
   - Start BullMQ worker
   - Set up graceful shutdown
   - Add health check endpoint
 
+## Phase 4.5: Unit Testing
+
+### Test Setup
+- [x] Install Jest testing framework:
+  ```bash
+  npm install -D jest @types/jest ts-jest @jest/globals
+  ```
+- [x] Configure Jest with `jest.config.js`
+- [x] Create test setup file `tests/setup.ts`
+- [x] Add test scripts to `package.json`:
+  ```json
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  }
+  ```
+
+### Service Tests
+- [x] Create `tests/services/database.test.ts`:
+  - Test Supabase client initialization
+  - Test `getActiveApartments()` method
+  - Test `findNewUnits()` comparison logic
+  - Test `updateApartments()` upsert functionality
+  - Test `markUnavailable()` status updates
+  - Test `logScrapeRun()` logging
+  - Test `testConnection()` health check
+  - Test error handling for all methods
+
+- [x] Create `tests/services/scraper.test.ts`:
+  - Test Playwright browser initialization
+  - Test apartment scraping workflow
+  - Test bedroom count extraction
+  - Test rent parsing from strings
+  - Test availability date parsing
+  - Test floorplan filtering logic
+  - Test error handling and cleanup
+  - Mock external dependencies
+
+- [x] Create `tests/services/notifications.test.ts`:
+  - Test ntfy.sh notification service initialization
+  - Test single apartment notification formatting
+  - Test multiple apartments notification formatting
+  - Test studio vs 1BR labeling
+  - Test date formatting in messages
+  - Test error notification sending
+  - Test notification test functionality
+  - Test summary notifications with statistics
+  - Mock fetch API calls to ntfy.sh
+
+### Test Results
+- [x] All tests passing: **51 tests passed**
+- [x] Full test coverage for core services
+- [x] Proper mocking of external dependencies (fetch, Supabase, Playwright)
+- [x] Error handling verification
+- [x] Edge case testing included
+- [x] Notification service updated with ntfy.sh integration tests
+
 ## Phase 5: Render.com Configuration
 
 ### Environment Variables
-All environment variables are managed through GitHub Secrets for production deployment. For local development, use the `.env` file created from `.env.example`.
+Environment variables are set during initial Render deployment (thanks to `sync: false` in render.yaml). For local development, use the `.env` file created from `.env.example`.
 
 ### Render Configuration
-- [ ] Create `render.yaml`:
+- [x] Create `render.yaml`:
   ```yaml
   services:
     - type: worker
@@ -253,24 +313,20 @@ All environment variables are managed through GitHub Secrets for production depl
         - key: NODE_ENV
           value: production
         - key: SUPABASE_URL
-          fromRepo: true
+          sync: false
         - key: SUPABASE_ANON_KEY
-          fromRepo: true
+          sync: false
         - key: SUPABASE_SERVICE_ROLE_KEY
-          fromRepo: true
+          sync: false
         - key: REDIS_URL
           fromService:
             name: apt-crawler-redis
             type: redis
             property: connectionString
-        - key: TWILIO_ACCOUNT_SID
-          fromRepo: true
-        - key: TWILIO_AUTH_TOKEN
-          fromRepo: true
-        - key: TWILIO_PHONE_NUMBER
-          fromRepo: true
-        - key: MY_PHONE_NUMBER
-          fromRepo: true
+        - key: NTFY_TOPIC
+          sync: false
+        - key: NTFY_SERVER
+          sync: false
 
     - type: redis
       name: apt-crawler-redis
@@ -290,13 +346,32 @@ All environment variables are managed through GitHub Secrets for production depl
   - [ ] Click "New +" → "Blueprint"
   - [ ] Select your GitHub repository (`apt-crawler`)
   - [ ] Render will auto-detect `render.yaml`
-  - [ ] Render automatically uses GitHub Secrets as environment variables
+  - [ ] **Enter environment variables when prompted** (due to `sync: false` setting):
+    - [ ] SUPABASE_URL
+    - [ ] SUPABASE_ANON_KEY
+    - [ ] SUPABASE_SERVICE_ROLE_KEY
+    - [ ] NTFY_TOPIC
+    - [ ] NTFY_SERVER
   - [ ] Click "Apply" to deploy
 
-- [ ] After Redis deployment completes:
-  - [ ] Copy Redis connection URL from Render dashboard
-  - [ ] Add `REDIS_URL` to your GitHub Secrets
-  - [ ] Redeploy the worker service
+### Redis Verification Steps
+After deployment, verify Redis is properly configured:
+
+- [ ] **In Render Dashboard**:
+  - [ ] Go to your deployed blueprint
+  - [ ] Confirm both services are running: `apt-crawler-worker` and `apt-crawler-redis`
+  - [ ] Click on Redis service to see connection details
+  - [ ] Verify Redis status shows "Live"
+
+- [ ] **Check Environment Variables**:
+  - [ ] Go to worker service → Environment tab
+  - [ ] Confirm `REDIS_URL` is automatically populated
+  - [ ] URL should look like: `redis://red-xxxxx:6379` or `rediss://red-xxxxx:6380`
+
+- [ ] **Test Redis Connection**:
+  - [ ] Check worker service logs for successful Redis connection
+  - [ ] Look for BullMQ connection messages in logs
+  - [ ] No "Redis connection failed" errors should appear
 
 ## Phase 6: Cron Job Setup
 
@@ -307,7 +382,7 @@ All environment variables are managed through GitHub Secrets for production depl
     - Name: "scrape-apartments"
     - Schedule: "0 */2 * * *" (every 2 hours)
     - Command: `npm run scrape:once`
-- [ ] Add script to `package.json`:
+- [x] Add script to `package.json`:
   ```json
   "scripts": {
     "build": "tsc",
@@ -322,14 +397,14 @@ All environment variables are managed through GitHub Secrets for production depl
 ### Local Testing
 - [ ] Test scraper with single floorplan
 - [ ] Test database operations
-- [ ] Test SMS sending (use test number first)
+- [ ] Test ntfy.sh notifications
 - [ ] Test full workflow locally
 
 ### Production Testing
 - [ ] Deploy to Render
 - [ ] Manually trigger cron job
 - [ ] Verify database updates
-- [ ] Confirm SMS delivery
+- [ ] Confirm notification delivery
 - [ ] Check worker logs
 
 ### Monitoring Setup
@@ -340,33 +415,33 @@ All environment variables are managed through GitHub Secrets for production depl
   ORDER BY started_at DESC 
   LIMIT 20;
   ```
-- [ ] Monitor Twilio usage dashboard
+- [ ] Monitor ntfy.sh topic for notification delivery
 - [ ] Set up error notifications to admin
 
 ## Phase 8: Maintenance & Operations
 
 ### Regular Checks
 - [ ] Weekly: Review scraping logs for errors
-- [ ] Monthly: Check Twilio balance
 - [ ] Monthly: Verify Render billing
+- [ ] Monthly: Check ntfy.sh topic subscription
 
 ### Troubleshooting Guide
 - [ ] If scraper fails: Check if website structure changed
-- [ ] If no SMS: Verify Twilio credentials and balance
-- [ ] If duplicate SMS: Check database unique constraints
+- [ ] If no notifications: Verify ntfy.sh topic and network connectivity
+- [ ] If duplicate notifications: Check database unique constraints
 - [ ] If missed apartments: Review scraper selectors
 
 ### Update Procedures
 - [ ] To update selectors: Modify `scraper.ts` and redeploy
 - [ ] To change schedule: Update cron job in Render dashboard
-- [ ] To add phone numbers: Update environment variables
+- [ ] To change notification topic: Update `NTFY_TOPIC` environment variable
 
 ## Cost Estimate (Updated)
 - **Render.com Worker**: **FREE** (750 hours/month free tier - you'll use ~3 hours/month)
 - **Render.com Redis**: **FREE** (trial tier) or $10/month for production persistence
 - **Supabase**: **FREE** (free tier is plenty for this use case)
-- **Twilio**: ~$0.0079 per SMS (only when apartments found)
-- **Total**: **$0-10/month** + minimal SMS costs
+- **Ntfy.sh**: **FREE** (no limits, no registration required)
+- **Total**: **$0-10/month** (completely free with trial tiers)
 
 ### Usage Breakdown
 - Scraper runs every 2 hours for ~30 seconds each time

@@ -1,0 +1,44 @@
+{
+  "name": "apt-crawler",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "scrape:once": "tsx src/jobs/runOnce.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/milesofmichael/apt-crawler.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/milesofmichael/apt-crawler/issues"
+  },
+  "homepage": "https://github.com/milesofmichael/apt-crawler#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.53.0",
+    "@types/node": "^24.1.0",
+    "bullmq": "^5.56.8",
+    "dotenv": "^17.2.1",
+    "ioredis": "^5.6.1",
+    "playwright": "^1.54.1",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  },
+  "devDependencies": {
+    "@jest/globals": "^30.0.5",
+    "@types/jest": "^30.0.0",
+    "jest": "^30.0.5",
+    "nodemon": "^3.1.10",
+    "ts-jest": "^29.4.0"
+  }
+}

@@ -1,0 +1,30 @@
+services:
+  - type: worker
+    name: apt-crawler-worker
+    env: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        fromRepo: true
+      - key: SUPABASE_ANON_KEY
+        fromRepo: true
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        fromRepo: true
+      - key: REDIS_URL
+        fromService:
+          name: apt-crawler-redis
+          type: redis
+          property: connectionString
+      - key: NTFY_TOPIC
+        fromRepo: true
+      - key: NTFY_SERVER
+        fromRepo: true
+
+  - type: redis
+    name: apt-crawler-redis
+    plan: starter  # Use free trial tier
+    maxmemoryPolicy: allkeys-lru
