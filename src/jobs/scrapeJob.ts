@@ -59,19 +59,19 @@ export class ScrapeJobScheduler {
   }
 
   /**
-   * Schedule recurring scraping jobs (every 2 hours)
+   * Schedule recurring scraping jobs (every hour)
    */
   async scheduleRecurringJobs(): Promise<void> {
     // Remove any existing recurring jobs first
     await this.removeRecurringJobs();
 
-    // Add recurring job - every 2 hours
+    // Add recurring job - every hour
     const job = await this.queue.add(
       'scrape-apartments',
       {},
       {
         repeat: {
-          pattern: '0 */2 * * *', // Every 2 hours at minute 0
+          pattern: '0 */1 * * *', // Every hour at minute 0
           tz: 'America/New_York' // Adjust timezone as needed
         },
         jobId: 'recurring-scrape',

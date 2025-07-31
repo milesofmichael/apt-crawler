@@ -56,7 +56,7 @@ The Dellwood - #WEST-641 - $1,991 - Available Sep 28 | The Gateway - #WEST-437 -
 - **Project Structure**: TypeScript with strict type checking
 - **Services**: Database (Supabase), Scraper (Playwright), Notifications (Ntfy.sh)
 - **Workers**: BullMQ background worker with Redis queue
-- **Jobs**: Recurring scrape job (every 2 hours) + one-time runner
+- **Jobs**: Recurring scrape job (every hour) + one-time runner
 - **Testing**: Jest with full coverage (51 tests passing)
 - **Deployment**: render.yaml blueprint with automatic Redis setup
 
@@ -76,7 +76,7 @@ The Dellwood - #WEST-641 - $1,991 - Available Sep 28 | The Gateway - #WEST-437 -
 ## Key Requirements
 - Only track studios (0BR) and 1-bedrooms
 - Send notifications only for newly available units (unless `--ignore-database` flag used)
-- Run every 2 hours via scheduled worker
+- Run every hour via scheduled worker
 - Use BullMQ for reliable job processing
 - Maintain apartment availability history
 - Concise notification format for mobile push notifications

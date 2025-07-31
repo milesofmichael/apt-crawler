@@ -303,7 +303,8 @@ describe('ScraperService', () => {
         mockPage, 
         'https://example.com/floorplan', 
         'Test Floorplan', 
-        1
+        1,
+        new Set<string>()
       );
 
       expect(result).toHaveLength(0);
@@ -329,7 +330,8 @@ describe('ScraperService', () => {
         mockPage, 
         'https://example.com/floorplan', 
         'Test Floorplan', 
-        1
+        1,
+        new Set<string>()
       );
 
       expect(result).toHaveLength(0);
@@ -356,7 +358,8 @@ describe('ScraperService', () => {
         mockPage, 
         'https://example.com/floorplan', 
         'Test Floorplan', 
-        1
+        1,
+        new Set<string>()
       );
 
       expect(result).toHaveLength(0);
@@ -437,13 +440,15 @@ describe('ScraperService', () => {
         mockPage, 
         'https://flatsatpcm.com/floorplans/the-dellwood/', 
         'The Dellwood', 
-        0
+        0,
+        expect.any(Set)
       );
       expect(scraperServiceSpy).toHaveBeenCalledWith(
         mockPage, 
         'https://flatsatpcm.com/floorplans/the-gateway/', 
         'The Gateway', 
-        0
+        0,
+        expect.any(Set)
       );
 
       expect(result).toHaveLength(0);
@@ -477,7 +482,7 @@ describe('ScraperService', () => {
 
       // Mock scrapeFloorplanDetails to fail for first floorplan, succeed for second
       const scraperServiceSpy = jest.spyOn(scraperService as any, 'scrapeFloorplanDetails')
-        .mockImplementation((page, url, title) => {
+        .mockImplementation((page, url, title, bedroomCount, globalSeenUnits) => {
           if (title === 'The Dellwood') {
             throw new Error('Network error');
           }
@@ -538,7 +543,8 @@ describe('ScraperService', () => {
         mockPage, 
         'https://flatsatpcm.com/floorplans/the-available/', 
         'The Available', 
-        0
+        0,
+        expect.any(Set)
       );
       
       scraperServiceSpy.mockRestore();
@@ -669,7 +675,8 @@ describe('ScraperService', () => {
           mockPage, 
           'https://example.com/test', 
           'Test Floorplan', 
-          1
+          1,
+          new Set<string>()
         );
         
         // Should only return one unit despite finding it 3 times
@@ -711,7 +718,8 @@ describe('ScraperService', () => {
           mockPage, 
           'https://example.com/test', 
           'Test Floorplan', 
-          1
+          1,
+          new Set<string>()
         );
         
         // Should return both units since they have different rent/dates

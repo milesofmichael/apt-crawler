@@ -377,7 +377,7 @@ After deployment, verify Redis is properly configured:
 
 - [x] **Automatic Scheduling** (via BullMQ):
   - [x] Jobs scheduled automatically by the worker application
-  - [x] Recurring job runs every 2 hours: "0 */2 * * *"
+  - [x] Recurring job runs every hour: "0 */1 * * *"
   - [x] No manual cron job setup needed in Render dashboard
   - [x] Logs show: "Scheduled recurring scraping job"
 
@@ -418,7 +418,7 @@ After deployment, verify Redis is properly configured:
 - [x] Deploy to Render
 - [x] Worker application started successfully
 - [x] Redis connection established
-- [x] Job scheduling active (every 2 hours)
+- [x] Job scheduling active (every hour)
 - [ ] Manually trigger scrape job to verify full workflow
 - [ ] Verify database updates
 - [ ] Confirm notification delivery
@@ -461,8 +461,8 @@ After deployment, verify Redis is properly configured:
 - **Total**: **$0-10/month** (completely free with trial tiers)
 
 ### Usage Breakdown
-- Scraper runs every 2 hours for ~30 seconds each time
-- Monthly runtime: 12 runs/day × 30 days × 30 seconds = **~3 hours/month**
+- Scraper runs every hour for ~30 seconds each time
+- Monthly runtime: 24 runs/day × 30 days × 30 seconds = **~6 hours/month**
 - Well within Render's 750 free hours/month limit
 
 ## Timeline

@@ -42,7 +42,7 @@ class ApartmentCrawlerApp {
       }
 
       console.log('✅ Apartment Crawler Application started successfully');
-      console.log('Worker is ready to process scraping jobs every 2 hours');
+      console.log('Worker is ready to process scraping jobs every hour');
       
       // Keep the process alive
       this.keepAlive();

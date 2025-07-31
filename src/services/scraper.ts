@@ -50,6 +50,7 @@ export class ScraperService {
 
     const page = await this.context.newPage();
     const scrapedUnits: ScrapedUnit[] = [];
+    const globalSeenUnits = new Set<string>(); // Global duplicate prevention across all floorplans
 
     try {
       console.log('Navigating to floorplans page...');
@@ -148,7 +149,7 @@ export class ScraperService {
         console.log(`\n🏠 Processing ${floorplan.bedroomCount}BR floorplan: ${floorplan.title}`);
         
         try {
-          const units = await this.scrapeFloorplanDetails(page, floorplan.url, floorplan.title, floorplan.bedroomCount);
+          const units = await this.scrapeFloorplanDetails(page, floorplan.url, floorplan.title, floorplan.bedroomCount, globalSeenUnits);
           scrapedUnits.push(...units);
         } catch (error) {
           console.log(`⚠️  Failed to process ${floorplan.title}: ${error instanceof Error ? error.message : error}`);
@@ -181,9 +182,9 @@ export class ScraperService {
   /**
    * Scrape specific unit details from floorplan detail page
    */
-  private async scrapeFloorplanDetails(page: Page, url: string, floorplanName: string, bedroomCount: number): Promise<ScrapedUnit[]> {
+  private async scrapeFloorplanDetails(page: Page, url: string, floorplanName: string, bedroomCount: number, globalSeenUnits: Set<string>): Promise<ScrapedUnit[]> {
     const units: ScrapedUnit[] = [];
-    const seenUnits = new Set<string>(); // Track units we've already found
+    // Remove local seenUnits - we'll use the global one instead
     
     try {
       console.log(`Visiting floorplan page: ${url}`);
@@ -239,7 +240,9 @@ export class ScraperService {
               console.log(`Processing container ${i} text: ${containerText.substring(0, 200)}...`);
               
               // Extract unit information using regex patterns
-              const unitMatches = containerText.match(/#?([A-Z]+-\d+)/g);
+              // Prioritize descriptive unit numbers like WEST-437 over short codes like D-1
+              const unitMatches = containerText.match(/#?([A-Z]{3,}-\d+|WEST-\d+|EAST-\d+|NORTH-\d+|SOUTH-\d+)/g) || 
+                                 containerText.match(/#?([A-Z]+-\d+)/g);
               const priceMatches = containerText.match(/\$[\d,]+/g);
               const dateMatches = containerText.match(/Available\s+([A-Za-z]+\s+\d+)|(\d+\/\d+)/g);
               
@@ -249,20 +252,25 @@ export class ScraperService {
                   const rent = priceMatches[j] || priceMatches[0];
                   const availabilityDate = dateMatches?.[j] || dateMatches?.[0] || 'Available Now';
                   
-                  const unitKey = `${unitNumber}-${rent}-${availabilityDate}`;
-                  if (!seenUnits.has(unitKey)) {
-                    seenUnits.add(unitKey);
+                  // Create a unique key including unit number to prevent exact duplicates
+                  // The improved regex should already prefer WEST-437 over D-1 format
+                  const unitKey = `${floorplanName}-${unitNumber}-${rent}-${availabilityDate}`;
+                  if (!globalSeenUnits.has(unitKey)) {
+                    globalSeenUnits.add(unitKey);
                     
                     units.push({
                       unitNumber: unitNumber.trim(),
                       rent: rent.trim(),
                       availabilityDate: availabilityDate.replace('Available ', '').trim(),
                       floorplanName,
+                      floorplanUrl: url,
                       bedroomCount
                     });
                     
                     console.log(`✅ Found unit: ${unitNumber} - ${rent} - ${availabilityDate}`);
                     foundUnits = true;
+                  } else {
+                    console.log(`🔄 Duplicate unit skipped: ${unitNumber} - ${rent} - ${availabilityDate}`);
                   }
                 }
               }
@@ -288,15 +296,18 @@ export class ScraperService {
             const dateMatch = fullMatch.match(/Available\s+([A-Za-z]+\s+\d+)/) || fullMatch.match(/(\d+\/\d+)/);
             
             if (priceMatch) {
-              const unitKey = `${unitNumber}-${priceMatch[0]}-${dateMatch?.[1] || dateMatch?.[0] || 'Available Now'}`;
-              if (!seenUnits.has(unitKey)) {
-                seenUnits.add(unitKey);
+              // Create a unique key including unit number to prevent exact duplicates
+              // The improved regex should already prefer WEST-437 over D-1 format
+              const unitKey = `${floorplanName}-${unitNumber}-${priceMatch[0]}-${dateMatch?.[1] || dateMatch?.[0] || 'Available Now'}`;
+              if (!globalSeenUnits.has(unitKey)) {
+                globalSeenUnits.add(unitKey);
                 
                 units.push({
                   unitNumber: unitNumber.trim(),
                   rent: priceMatch[0].trim(),
                   availabilityDate: dateMatch?.[1] || dateMatch?.[0] || 'Available Now',
                   floorplanName,
+                  floorplanUrl: url,
                   bedroomCount
                 });
                 
@@ -316,10 +327,10 @@ export class ScraperService {
   }
 
   /**
-   * Process scraped units into standardized format
+   * Process scraped units into standardized format with final deduplication
    */
   private processScrapedUnits(scrapedUnits: ScrapedUnit[]): Apartment[] {
-    return scrapedUnits.map(unit => {
+    const processedUnits = scrapedUnits.map(unit => {
       // Parse rent from "$1,991" to 1991
       const rent = this.parseRent(unit.rent);
       
@@ -334,6 +345,25 @@ export class ScraperService {
         availabilityDate
       };
     });
+
+    // Final deduplication step: remove any remaining duplicates based on unique key
+    const seenFinalUnits = new Set<string>();
+    const deduplicatedUnits: Apartment[] = [];
+
+    for (const unit of processedUnits) {
+      const availabilityStr = unit.availabilityDate?.toLocaleDateString() || 'No Date';
+      // Create unique key including unit number to allow multiple units with same rent/date
+      const unitKey = `${unit.floorplanName}-${unit.unitNumber}-${unit.rent}-${availabilityStr}`;
+      
+      if (!seenFinalUnits.has(unitKey)) {
+        seenFinalUnits.add(unitKey);
+        deduplicatedUnits.push(unit);
+      } else {
+        console.log(`🔄 Final duplicate unit filtered out: ${unit.floorplanName} - ${unit.unitNumber}`);
+      }
+    }
+
+    return deduplicatedUnits;
   }
 
   /**

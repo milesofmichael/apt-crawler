@@ -17,6 +17,7 @@ export interface ScrapedUnit {
   rent: string;
   availabilityDate: string;
   floorplanName: string;
+  floorplanUrl: string;
   bedroomCount: number;
 }
 
