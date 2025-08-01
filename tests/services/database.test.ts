@@ -6,13 +6,13 @@ const mockSupabaseClient: any = {
   from: jest.fn().mockReturnThis(),
   select: jest.fn().mockReturnThis(),
   eq: jest.fn().mockReturnThis(),
-  upsert: jest.fn().mockReturnThis(),
-  update: jest.fn().mockReturnThis(),
+  upsert: jest.fn(),
+  update: jest.fn(),
   delete: jest.fn().mockReturnThis(),
-  not: jest.fn().mockReturnThis(),
-  neq: jest.fn().mockReturnThis(),
-  insert: jest.fn().mockReturnThis(),
-  limit: jest.fn().mockReturnThis()
+  not: jest.fn(),
+  neq: jest.fn(),
+  insert: jest.fn(),
+  limit: jest.fn()
 };
 
 // Mock the createClient function
@@ -257,7 +257,8 @@ describe('DatabaseService', () => {
   describe('removeUnavailableUnits', () => {
     it('should remove units not in current list', async () => {
       const currentUnitNumbers = ['WEST-641', 'EAST-502'];
-      mockSupabaseClient.not.mockResolvedValue({ error: null });
+      mockSupabaseClient.not.mockReturnThis();
+      mockSupabaseClient.neq.mockResolvedValue({ error: null });
 
       await databaseService.removeUnavailableUnits(currentUnitNumbers);
 
@@ -320,6 +321,8 @@ describe('DatabaseService', () => {
 
   describe('testConnection', () => {
     it('should return true on successful connection', async () => {
+      // Set up the chain so that select returns this, and limit returns the final result
+      mockSupabaseClient.select.mockReturnThis();
       mockSupabaseClient.limit.mockResolvedValue({ error: null });
 
       const result = await databaseService.testConnection();
@@ -331,6 +334,7 @@ describe('DatabaseService', () => {
     });
 
     it('should return false on connection failure', async () => {
+      mockSupabaseClient.select.mockReturnThis();
       mockSupabaseClient.limit.mockResolvedValue({ error: { message: 'Connection failed' } });
 
       const result = await databaseService.testConnection();
@@ -339,6 +343,7 @@ describe('DatabaseService', () => {
     });
 
     it('should return false on exception', async () => {
+      mockSupabaseClient.select.mockReturnThis();
       mockSupabaseClient.limit.mockRejectedValue(new Error('Network error'));
 
       const result = await databaseService.testConnection();

@@ -13,15 +13,20 @@ const mockPage = {
   evaluate: jest.fn()
 };
 
-const mockLocator = {
+const mockLocator: any = {
   count: jest.fn(),
   nth: jest.fn(),
   locator: jest.fn(),
   textContent: jest.fn(),
   getAttribute: jest.fn(),
   first: jest.fn(),
-  scrollIntoViewIfNeeded: jest.fn()
+  scrollIntoViewIfNeeded: jest.fn(),
+  all: jest.fn(),
+  click: jest.fn()
 };
+
+// Set up the first method to return itself after the object is defined
+mockLocator.first.mockReturnValue(mockLocator);
 
 const mockContext = {
   newPage: jest.fn(() => Promise.resolve(mockPage)),
@@ -52,6 +57,8 @@ describe('ScraperService', () => {
     
     // Reset mock implementations
     mockPage.locator.mockReturnValue(mockLocator);
+    mockPage.goto.mockResolvedValue(undefined);
+    mockPage.waitForTimeout.mockResolvedValue(undefined);
     mockLocator.locator.mockReturnValue(mockLocator);
     mockLocator.nth.mockReturnValue(mockLocator);
     mockLocator.first.mockReturnValue(mockLocator);
@@ -64,15 +71,41 @@ describe('ScraperService', () => {
   });
 
   describe('initialize', () => {
-    it('should initialize browser successfully', async () => {
+    it('should initialize browser successfully with enhanced production args', async () => {
       await scraperService.initialize();
 
       expect(chromium.launch).toHaveBeenCalledWith({
         headless: true,
-        args: ['--no-sandbox', '--disable-dev-shm-usage']
+        timeout: 30000,
+        args: [
+          '--no-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-web-security',
+          '--disable-features=VizDisplayCompositor',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--single-process',
+          '--no-zygote',
+          '--disable-extensions',
+          '--disable-default-apps',
+          '--disable-background-networking',
+          '--disable-sync',
+          '--disable-translate',
+          '--disable-ipc-flooding-protection'
+        ]
       });
       expect(mockBrowser.newContext).toHaveBeenCalledWith({
-        userAgent: expect.stringContaining('Mozilla/5.0')
+        userAgent: expect.stringContaining('Mozilla/5.0'),
+        viewport: { width: 1920, height: 1080 },
+        locale: 'en-US',
+        timezoneId: 'America/New_York',
+        extraHTTPHeaders: expect.objectContaining({
+          'Accept': expect.stringContaining('text/html'),
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Connection': 'keep-alive'
+        })
       });
     });
 
@@ -94,7 +127,15 @@ describe('ScraperService', () => {
       
       // Should eventually succeed in creating context
       expect(mockBrowser.newContext).toHaveBeenCalledWith({
-        userAgent: expect.stringContaining('Mozilla/5.0')
+        userAgent: expect.stringContaining('Mozilla/5.0'),
+        viewport: { width: 1920, height: 1080 },
+        locale: 'en-US',
+        timezoneId: 'America/New_York',
+        extraHTTPHeaders: expect.objectContaining({
+          'Accept': expect.stringContaining('text/html'),
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Connection': 'keep-alive'
+        })
       });
     });
 
@@ -162,6 +203,300 @@ describe('ScraperService', () => {
         await testScraper.cleanup();
       }
     });
+
+    it('should handle timeout errors during browser launch', async () => {
+      const service = new ScraperService();
+      (chromium.launch as jest.Mock)
+        .mockRejectedValueOnce(new Error('Launch timeout exceeded'))
+        .mockResolvedValueOnce(mockBrowser);
+
+      await service.initialize();
+
+      expect(chromium.launch).toHaveBeenCalledTimes(2);
+      // Should retry with extended timeout
+      expect(chromium.launch).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          timeout: 60000
+        })
+      );
+    });
+
+    it('should handle spawn errors during browser launch', async () => {
+      const service = new ScraperService();
+      (chromium.launch as jest.Mock)
+        .mockRejectedValueOnce(new Error('Failed to launch browser process'))
+        .mockResolvedValueOnce(mockBrowser);
+
+      await service.initialize();
+
+      expect(chromium.launch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should perform cleanup of zombie processes in production', async () => {
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      
+      const service = new ScraperService();
+      await service.initialize();
+
+      // Should call process cleanup commands
+      expect(execSync).toHaveBeenCalledWith('pkill -f chromium || true', { stdio: 'pipe' });
+      expect(execSync).toHaveBeenCalledWith('pkill -f chrome || true', { stdio: 'pipe' });
+      expect(execSync).toHaveBeenCalledWith('rm -rf /tmp/.org.chromium.* || true', { stdio: 'pipe' });
+      expect(execSync).toHaveBeenCalledWith('rm -rf /tmp/playwright* || true', { stdio: 'pipe' });
+      
+      process.env.NODE_ENV = originalEnv;
+    });
+
+    it('should skip zombie process cleanup in non-production', async () => {
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+      
+      const service = new ScraperService();
+      await service.initialize();
+
+      // Should not call process cleanup commands
+      expect(execSync).not.toHaveBeenCalledWith('pkill -f chromium || true', { stdio: 'pipe' });
+      
+      process.env.NODE_ENV = originalEnv;
+    });
+
+    it('should handle cleanup errors gracefully', async () => {
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      
+      // Mock execSync to throw error during cleanup
+      (execSync as jest.Mock).mockImplementationOnce(() => {
+        throw new Error('Process cleanup failed');
+      });
+      
+      const service = new ScraperService();
+      
+      // Should not throw error even if cleanup fails
+      await expect(service.initialize()).resolves.not.toThrow();
+      
+      process.env.NODE_ENV = originalEnv;
+    });
+  });
+
+  describe('navigation strategies', () => {
+    beforeEach(async () => {
+      await scraperService.initialize();
+    });
+
+    afterEach(async () => {
+      await scraperService.cleanup();
+    });
+
+    it('should succeed with first navigation strategy (DOM loaded)', async () => {
+      // Mock successful DOM loaded navigation
+      mockPage.goto.mockResolvedValue(undefined);
+      mockLocator.count.mockResolvedValue(0); // No cards to avoid complex setup
+
+      const result = await scraperService.scrapeApartments();
+
+      expect(mockPage.goto).toHaveBeenCalledWith('https://flatsatpcm.com/floorplans/', {
+        waitUntil: 'domcontentloaded',
+        timeout: 45000
+      });
+      expect(result).toEqual([]);
+    });
+
+    it('should fall back to second strategy when first fails', async () => {
+      const domError = new Error('page.goto: Timeout 45000ms exceeded (domcontentloaded)');
+      
+      // First call fails, second succeeds
+      mockPage.goto
+        .mockRejectedValueOnce(domError)
+        .mockResolvedValue(undefined);
+      mockLocator.count.mockResolvedValue(0);
+
+      const result = await scraperService.scrapeApartments();
+
+      expect(mockPage.goto).toHaveBeenCalledTimes(2);
+      expect(mockPage.goto).toHaveBeenNthCalledWith(1, 'https://flatsatpcm.com/floorplans/', {
+        waitUntil: 'domcontentloaded',
+        timeout: 45000
+      });
+      expect(mockPage.goto).toHaveBeenNthCalledWith(2, 'https://flatsatpcm.com/floorplans/', {
+        waitUntil: 'load',
+        timeout: 60000
+      });
+      expect(result).toEqual([]);
+    });
+
+    it('should try all three strategies before failing', async () => {
+      const domError = new Error('page.goto: Timeout 45000ms exceeded (domcontentloaded)');
+      const loadError = new Error('page.goto: Timeout 60000ms exceeded (load)');
+      const networkError = new Error('page.goto: Timeout 30000ms exceeded (networkidle)');
+      
+      mockPage.goto
+        .mockRejectedValueOnce(domError)
+        .mockRejectedValueOnce(loadError)
+        .mockRejectedValueOnce(networkError);
+
+      await expect(scraperService.scrapeApartments()).rejects.toThrow('page.goto: Timeout 30000ms exceeded (networkidle)');
+
+      expect(mockPage.goto).toHaveBeenCalledTimes(3);
+      expect(mockPage.goto).toHaveBeenNthCalledWith(1, 'https://flatsatpcm.com/floorplans/', {
+        waitUntil: 'domcontentloaded',
+        timeout: 45000
+      });
+      expect(mockPage.goto).toHaveBeenNthCalledWith(2, 'https://flatsatpcm.com/floorplans/', {
+        waitUntil: 'load',
+        timeout: 60000
+      });
+      expect(mockPage.goto).toHaveBeenNthCalledWith(3, 'https://flatsatpcm.com/floorplans/', {
+        waitUntil: 'networkidle',
+        timeout: 30000
+      });
+    });
+
+    it('should succeed with network idle strategy after first two fail', async () => {
+      const domError = new Error('page.goto: Timeout 45000ms exceeded (domcontentloaded)');
+      const loadError = new Error('page.goto: Timeout 60000ms exceeded (load)');
+      
+      mockPage.goto
+        .mockRejectedValueOnce(domError)
+        .mockRejectedValueOnce(loadError)
+        .mockResolvedValue(undefined); // Third attempt succeeds
+      mockLocator.count.mockResolvedValue(0);
+
+      const result = await scraperService.scrapeApartments();
+
+      expect(mockPage.goto).toHaveBeenCalledTimes(3);
+      expect(mockPage.goto).toHaveBeenNthCalledWith(3, 'https://flatsatpcm.com/floorplans/', {
+        waitUntil: 'networkidle',
+        timeout: 30000
+      });
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('retry logic', () => {
+    it('should succeed on first attempt', async () => {
+      // Mock successful scraping
+      mockLocator.count.mockResolvedValue(0);
+      
+      const result = await scraperService.run();
+
+      expect(result).toEqual([]);
+      expect(chromium.launch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should retry after initialization failure', async () => {
+      const browserError = new Error('Browser launch failed');
+      
+      // First attempt fails during initialization, second succeeds
+      (chromium.launch as jest.Mock)
+        .mockRejectedValueOnce(browserError)
+        .mockResolvedValue(mockBrowser);
+      mockLocator.count.mockResolvedValue(0);
+
+      // Mock setTimeout to avoid actual delays in tests
+      const originalSetTimeout = global.setTimeout;
+      global.setTimeout = jest.fn((callback) => {
+        callback();
+        return 123 as any;
+      }) as any;
+
+      const result = await scraperService.run();
+
+      expect(result).toEqual([]);
+      expect(chromium.launch).toHaveBeenCalledTimes(2);
+      
+      // Restore setTimeout
+      global.setTimeout = originalSetTimeout;
+    });
+
+    it('should retry after navigation failure', async () => {
+      const navError = new Error('page.goto: Timeout 30000ms exceeded');
+      
+      // First attempt fails during navigation, second succeeds
+      mockPage.goto
+        .mockRejectedValueOnce(navError)
+        .mockRejectedValueOnce(navError)
+        .mockRejectedValueOnce(navError) // All strategies fail on first attempt
+        .mockResolvedValue(undefined); // Second attempt succeeds
+      mockLocator.count.mockResolvedValue(0);
+
+      // Mock setTimeout to avoid actual delays
+      const originalSetTimeout = global.setTimeout;
+      global.setTimeout = jest.fn((callback) => {
+        callback();
+        return 123 as any;
+      }) as any;
+
+      const result = await scraperService.run();
+
+      expect(result).toEqual([]);
+      expect(mockPage.goto).toHaveBeenCalledTimes(4); // 3 failed + 1 success
+      
+      global.setTimeout = originalSetTimeout;
+    });
+
+    it('should fail after 3 attempts', async () => {
+      const persistentError = new Error('Persistent network failure');
+      
+      // All attempts fail
+      mockPage.goto.mockRejectedValue(persistentError);
+
+      // Mock setTimeout to avoid actual delays
+      const originalSetTimeout = global.setTimeout;
+      global.setTimeout = jest.fn((callback) => {
+        callback();
+        return 123 as any;
+      }) as any;
+
+      await expect(scraperService.run()).rejects.toThrow('Persistent network failure');
+
+      expect(chromium.launch).toHaveBeenCalledTimes(3);
+      expect(mockPage.goto).toHaveBeenCalledTimes(9); // 3 attempts × 3 strategies each
+      
+      global.setTimeout = originalSetTimeout;
+    });
+
+    it('should use exponential backoff between retries', async () => {
+      const error = new Error('Network failure');
+      mockPage.goto.mockRejectedValue(error);
+
+      // Mock setTimeout to capture delay times
+      const setTimeoutSpy = jest.fn((callback) => {
+        callback();
+        return 123 as any;
+      });
+      const originalSetTimeout = global.setTimeout;
+      global.setTimeout = setTimeoutSpy as any;
+
+      await expect(scraperService.run()).rejects.toThrow('Network failure');
+
+      // Should have been called with 5000ms and 10000ms delays
+      expect(setTimeoutSpy).toHaveBeenCalledTimes(2);
+      expect(setTimeoutSpy).toHaveBeenNthCalledWith(1, expect.any(Function), 5000);
+      expect(setTimeoutSpy).toHaveBeenNthCalledWith(2, expect.any(Function), 10000);
+      
+      global.setTimeout = originalSetTimeout;
+    });
+
+    it('should clean up browser resources between retries', async () => {
+      const error = new Error('Scraping failure');
+      mockPage.goto.mockRejectedValue(error);
+
+      // Mock setTimeout to avoid delays
+      const originalSetTimeout = global.setTimeout;
+      global.setTimeout = jest.fn((callback) => {
+        callback();
+        return 123 as any;
+      }) as any;
+
+      await expect(scraperService.run()).rejects.toThrow('Scraping failure');
+
+      // Should have called cleanup multiple times (once per retry + final cleanup)
+      expect(mockContext.close).toHaveBeenCalledTimes(3); // 3 retries (final cleanup handled by run method)
+      expect(mockBrowser.close).toHaveBeenCalledTimes(3);
+      
+      global.setTimeout = originalSetTimeout;
+    });
   });
 
   describe('cleanup', () => {
@@ -175,6 +510,31 @@ describe('ScraperService', () => {
 
     it('should handle cleanup when browser not initialized', async () => {
       await expect(scraperService.cleanup()).resolves.not.toThrow();
+    });
+
+    it('should handle cleanup errors gracefully', async () => {
+      await scraperService.initialize();
+      
+      // Mock context.close to throw error
+      mockContext.close.mockRejectedValueOnce(new Error('Context cleanup failed'));
+      
+      // Should not throw error even if cleanup fails
+      await expect(scraperService.cleanup()).resolves.not.toThrow();
+    });
+
+    it('should call garbage collection when available', async () => {
+      await scraperService.initialize();
+      
+      // Mock global.gc
+      const mockGc = jest.fn();
+      (global as any).gc = mockGc;
+      
+      await scraperService.cleanup();
+      
+      expect(mockGc).toHaveBeenCalled();
+      
+      // Clean up
+      delete (global as any).gc;
     });
   });
 
@@ -278,7 +638,10 @@ describe('ScraperService', () => {
 
       const result = await scraperService.scrapeApartments();
 
-      expect(mockPage.goto).toHaveBeenCalledWith('https://flatsatpcm.com/floorplans/', { waitUntil: 'networkidle' });
+      expect(mockPage.goto).toHaveBeenCalledWith('https://flatsatpcm.com/floorplans/', { 
+        waitUntil: 'domcontentloaded',
+        timeout: 45000
+      });
       expect(result).toBeInstanceOf(Array);
       expect(mockPage.close).toHaveBeenCalled();
     });
@@ -365,6 +728,7 @@ describe('ScraperService', () => {
       mockTitleLocator.textContent.mockRejectedValue(new Error('locator.textContent: Timeout 5000ms exceeded'));
       mockCard.locator.mockReturnValue(mockTitleLocator);
       mockCard.textContent.mockResolvedValue('Some card text');
+      mockCard.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
       
       mockLocator.count.mockResolvedValue(1);
       mockLocator.nth.mockReturnValue(mockCard);
@@ -383,6 +747,7 @@ describe('ScraperService', () => {
       mockTitleLocator.textContent.mockResolvedValue('Studio Apartment');
       mockCard.locator.mockReturnValue(mockTitleLocator);
       mockCard.textContent.mockRejectedValue(new Error('locator.textContent: Timeout 5000ms exceeded'));
+      mockCard.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
       
       mockLocator.count.mockResolvedValue(1);
       mockLocator.nth.mockReturnValue(mockCard);
@@ -400,6 +765,8 @@ describe('ScraperService', () => {
       
       mockButtonLocator.count.mockRejectedValue(new Error('Element not found'));
       mockPage.locator.mockReturnValue(mockButtonLocator);
+      mockPage.goto.mockResolvedValue(undefined);
+      mockPage.waitForTimeout.mockResolvedValue(undefined);
 
       const result = await service.scrapeFloorplanDetails(
         mockPage, 
@@ -423,6 +790,8 @@ describe('ScraperService', () => {
       mockButtonLocator.count.mockResolvedValue(0);
       mockContainerLocator.count.mockRejectedValue(new Error('Element not accessible'));
       
+      mockPage.goto.mockResolvedValue(undefined);
+      mockPage.waitForTimeout.mockResolvedValue(undefined);
       mockPage.locator.mockImplementation((selector: string) => {
         if (selector.includes('availability')) return mockButtonLocator;
         return mockContainerLocator;
@@ -449,6 +818,8 @@ describe('ScraperService', () => {
       // Mock no button, no containers, page text times out
       mockButtonLocator.count.mockResolvedValue(0);
       mockContainerLocator.count.mockResolvedValue(0);
+      mockPage.goto.mockResolvedValue(undefined);
+      mockPage.waitForTimeout.mockResolvedValue(undefined);
       mockPage.textContent.mockRejectedValue(new Error('page.textContent: Timeout 10000ms exceeded'));
       
       mockPage.locator.mockImplementation((selector: string) => {
@@ -480,8 +851,10 @@ describe('ScraperService', () => {
       mockSuccessTitle.textContent.mockResolvedValue('Studio - Available');
       
       mockTimeoutCard.locator.mockReturnValue(mockTimeoutTitle);
+      mockTimeoutCard.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
       mockSuccessCard.locator.mockReturnValue(mockSuccessTitle);
       mockSuccessCard.textContent.mockResolvedValue('Starting at $1500');
+      mockSuccessCard.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
       
       mockLocator.count.mockResolvedValue(2);
       mockLocator.nth.mockImplementation((index: number) => {
@@ -507,23 +880,38 @@ describe('ScraperService', () => {
     });
 
     it('should collect qualifying floorplans first, then process them separately', async () => {
-      // Mock multiple cards with different scenarios
-      const mockCard1 = { ...mockLocator };
-      const mockCard2 = { ...mockLocator };
+      // Create separate mock objects to avoid interference
+      const mockCard1 = {
+        ...mockLocator,
+        locator: jest.fn(),
+        textContent: jest.fn().mockResolvedValue('Starting at $1500'),
+        scrollIntoViewIfNeeded: jest.fn().mockResolvedValue(undefined)
+      };
       
-      const mockTitle1 = { ...mockLocator };
-      const mockTitle2 = { ...mockLocator };
+      const mockCard2 = {
+        ...mockLocator,
+        locator: jest.fn(),
+        textContent: jest.fn().mockResolvedValue('Starting at $2000'),
+        scrollIntoViewIfNeeded: jest.fn().mockResolvedValue(undefined)
+      };
       
-      mockTitle1.textContent.mockResolvedValue('The Dellwood');
-      mockTitle2.textContent.mockResolvedValue('The Gateway');
+      const mockTitle1 = {
+        textContent: jest.fn().mockResolvedValue('The Dellwood')
+      };
       
-      mockCard1.locator.mockReturnValue(mockTitle1);
-      mockCard1.textContent.mockResolvedValue('Starting at $1500');
-      mockCard1.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
+      const mockTitle2 = {
+        textContent: jest.fn().mockResolvedValue('The Gateway')
+      };
       
-      mockCard2.locator.mockReturnValue(mockTitle2);
-      mockCard2.textContent.mockResolvedValue('Starting at $2000');
-      mockCard2.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
+      mockCard1.locator.mockImplementation((selector: string) => {
+        if (selector.includes('h1, h2, h3') || selector.includes('title')) return mockTitle1;
+        return mockLocator;
+      });
+      
+      mockCard2.locator.mockImplementation((selector: string) => {
+        if (selector.includes('h1, h2, h3') || selector.includes('title')) return mockTitle2;
+        return mockLocator;
+      });
       
       mockLocator.count.mockResolvedValue(2);
       mockLocator.nth.mockImplementation((index: number) => {
@@ -569,11 +957,17 @@ describe('ScraperService', () => {
       mockTitle1.textContent.mockResolvedValue('The Dellwood');
       mockTitle2.textContent.mockResolvedValue('The Gateway');
       
-      mockCard1.locator.mockReturnValue(mockTitle1);
+      mockCard1.locator.mockImplementation((selector: string) => {
+        if (selector.includes('h1, h2, h3') || selector.includes('title')) return mockTitle1;
+        return mockLocator;
+      });
       mockCard1.textContent.mockResolvedValue('Starting at $1500');
       mockCard1.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
       
-      mockCard2.locator.mockReturnValue(mockTitle2);
+      mockCard2.locator.mockImplementation((selector: string) => {
+        if (selector.includes('h1, h2, h3') || selector.includes('title')) return mockTitle2;
+        return mockLocator;
+      });
       mockCard2.textContent.mockResolvedValue('Starting at $2000');
       mockCard2.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
       
@@ -601,30 +995,54 @@ describe('ScraperService', () => {
     });
 
     it('should properly identify and collect qualifying floorplans based on pricing text', async () => {
-      // Mock cards with different pricing scenarios
-      const mockCard1 = { ...mockLocator }; // No pricing
-      const mockCard2 = { ...mockLocator }; // Has "Starting at $"
-      const mockCard3 = { ...mockLocator }; // Wrong bedroom count
+      // Create separate mock objects
+      const mockCard1 = {
+        ...mockLocator,
+        locator: jest.fn(),
+        textContent: jest.fn().mockResolvedValue('Waitlist Only'),
+        scrollIntoViewIfNeeded: jest.fn().mockResolvedValue(undefined)
+      };
       
-      const mockTitle1 = { ...mockLocator };
-      const mockTitle2 = { ...mockLocator };
-      const mockTitle3 = { ...mockLocator };
+      const mockCard2 = {
+        ...mockLocator,
+        locator: jest.fn(),
+        textContent: jest.fn().mockResolvedValue('Starting at $1500'),
+        scrollIntoViewIfNeeded: jest.fn().mockResolvedValue(undefined)
+      };
       
-      mockTitle1.textContent.mockResolvedValue('The Expensive');
-      mockTitle2.textContent.mockResolvedValue('The Available');
-      mockTitle3.textContent.mockResolvedValue('The Two Bedroom');
+      const mockCard3 = {
+        ...mockLocator,
+        locator: jest.fn(),
+        textContent: jest.fn().mockResolvedValue('Starting at $2000'),
+        scrollIntoViewIfNeeded: jest.fn().mockResolvedValue(undefined)
+      };
       
-      mockCard1.locator.mockReturnValue(mockTitle1);
-      mockCard1.textContent.mockResolvedValue('Waitlist Only');
-      mockCard1.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
+      const mockTitle1 = {
+        textContent: jest.fn().mockResolvedValue('The Expensive')
+      };
       
-      mockCard2.locator.mockReturnValue(mockTitle2);
-      mockCard2.textContent.mockResolvedValue('Starting at $1500');
-      mockCard2.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
+      const mockTitle2 = {
+        textContent: jest.fn().mockResolvedValue('The Available')
+      };
       
-      mockCard3.locator.mockReturnValue(mockTitle3);
-      mockCard3.textContent.mockResolvedValue('Starting at $2000');
-      mockCard3.scrollIntoViewIfNeeded.mockResolvedValue(undefined);
+      const mockTitle3 = {
+        textContent: jest.fn().mockResolvedValue('The Two Bedroom')
+      };
+      
+      mockCard1.locator.mockImplementation((selector: string) => {
+        if (selector.includes('h1, h2, h3') || selector.includes('title')) return mockTitle1;
+        return mockLocator;
+      });
+      
+      mockCard2.locator.mockImplementation((selector: string) => {
+        if (selector.includes('h1, h2, h3') || selector.includes('title')) return mockTitle2;
+        return mockLocator;
+      });
+      
+      mockCard3.locator.mockImplementation((selector: string) => {
+        if (selector.includes('h1, h2, h3') || selector.includes('title')) return mockTitle3;
+        return mockLocator;
+      });
       
       mockLocator.count.mockResolvedValue(3);
       mockLocator.nth.mockImplementation((index: number) => {
@@ -739,9 +1157,7 @@ describe('ScraperService', () => {
           unitNumber: 'WEST-641',
           rent: 1991,
           floorplanName: 'The Dellwood',
-          floorplanUrl: 'https://example.com/dellwood',
-          bedroomCount: 1,
-          isAvailable: true
+          bedroomCount: 1
         });
         expect(result[0].availabilityDate).toBeInstanceOf(Date);
       });
@@ -762,14 +1178,25 @@ describe('ScraperService', () => {
         mockPage.waitForTimeout.mockResolvedValue(undefined);
         
         // Mock the locator chain for finding containers
-        const mockContainerLocator = {
-          count: jest.fn().mockResolvedValue(1),
-          all: jest.fn().mockResolvedValue([{
-            textContent: jest.fn().mockResolvedValue(mockPageText)
-          }])
+        const mockButtonLocator = {
+          count: jest.fn().mockResolvedValue(0),
+          first: jest.fn().mockReturnValue({
+            count: jest.fn().mockResolvedValue(0)
+          })
         };
         
-        mockPage.locator.mockReturnValue(mockContainerLocator);
+        const mockContainerLocator = {
+          count: jest.fn().mockResolvedValue(1),
+          nth: jest.fn().mockReturnValue({
+            textContent: jest.fn().mockResolvedValue(mockPageText)
+          })
+        };
+        
+        mockPage.locator.mockImplementation((selector: string) => {
+          if (selector.includes('availability') || selector.includes('Availability')) return mockButtonLocator;
+          if (selector.includes('[class*="unit"]') || selector.includes('.unit-details')) return mockContainerLocator;
+          return mockContainerLocator;
+        });
         
         // Call the private method to test deduplication
         const service = scraperService as any;
@@ -806,14 +1233,25 @@ describe('ScraperService', () => {
         mockPage.waitForTimeout.mockResolvedValue(undefined);
         
         // Mock the locator chain
-        const mockContainerLocator = {
-          count: jest.fn().mockResolvedValue(1),
-          all: jest.fn().mockResolvedValue([{
-            textContent: jest.fn().mockResolvedValue(mockPageText)
-          }])
+        const mockButtonLocator = {
+          count: jest.fn().mockResolvedValue(0),
+          first: jest.fn().mockReturnValue({
+            count: jest.fn().mockResolvedValue(0)
+          })
         };
         
-        mockPage.locator.mockReturnValue(mockContainerLocator);
+        const mockContainerLocator = {
+          count: jest.fn().mockResolvedValue(1),
+          nth: jest.fn().mockReturnValue({
+            textContent: jest.fn().mockResolvedValue(mockPageText)
+          })
+        };
+        
+        mockPage.locator.mockImplementation((selector: string) => {
+          if (selector.includes('availability') || selector.includes('Availability')) return mockButtonLocator;
+          if (selector.includes('[class*="unit"]') || selector.includes('.unit-details')) return mockContainerLocator;
+          return mockContainerLocator;
+        });
         
         const service = scraperService as any;
         const result = await service.scrapeFloorplanDetails(

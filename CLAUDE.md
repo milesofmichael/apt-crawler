@@ -82,6 +82,14 @@ The Dellwood - #WEST-641 - $1,991 - Available Sep 28 | The Gateway - #WEST-437 -
 - Maintain apartment availability history
 - Concise notification format for mobile push notifications
 
+## Development Requirements
+- **ALWAYS write comprehensive unit tests for ALL new code**
+- **100% of tests MUST pass before deployment**
+- Test coverage should include edge cases, error handling, and all code paths
+- Use Jest for testing with proper mocking of external dependencies
+
 ## Render.com Notes
 - ScraperService auto-installs Playwright browsers at runtime (ephemeral filesystem issue)
+- Multi-strategy navigation with timeout handling (DOM loaded → full load → network idle)
+- 3-attempt retry logic with exponential backoff for network reliability
 - Build command: `npm install && npm run build` (no browser pre-install needed)

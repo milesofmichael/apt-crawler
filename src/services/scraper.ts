@@ -15,50 +15,135 @@ export class ScraperService {
   async initialize(): Promise<void> {
     console.log('Initializing browser for scraping...');
     
+    // Clean up any existing resources first
+    await this.cleanup();
+    
+    // Force cleanup of zombie processes on Render.com
+    if (process.env.NODE_ENV === 'production') {
+      try {
+        console.log('Cleaning up any zombie browser processes...');
+        execSync('pkill -f chromium || true', { stdio: 'pipe' });
+        execSync('pkill -f chrome || true', { stdio: 'pipe' });
+        // Clear any tmp files that might be consuming disk space
+        execSync('rm -rf /tmp/.org.chromium.* || true', { stdio: 'pipe' });
+        execSync('rm -rf /tmp/playwright* || true', { stdio: 'pipe' });
+      } catch (cleanupError) {
+        console.log('Process cleanup completed (errors expected)');
+      }
+    }
+    
+    const launchOptions = {
+      headless: true,
+      timeout: 30000, // Explicit launch timeout
+      args: [
+        '--no-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        // Additional args for Render.com reliability
+        '--single-process', // Reduce memory usage
+        '--no-zygote', // Avoid process spawning issues
+        '--disable-extensions',
+        '--disable-default-apps',
+        '--disable-background-networking',
+        '--disable-sync',
+        '--disable-translate',
+        '--disable-ipc-flooding-protection'
+      ]
+    };
+    
     try {
-      this.browser = await chromium.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-dev-shm-usage'] // For production deployment
-      });
+      console.log('Attempting browser launch...');
+      this.browser = await chromium.launch(launchOptions);
     } catch (error) {
-      if (error instanceof Error && error.message.includes('Executable doesn\'t exist')) {
-        console.log('Browser not found, installing Playwright browsers...');
-        try {
-          execSync('npx playwright install chromium', { stdio: 'inherit' });
-          console.log('Browser installation completed, retrying launch...');
-          this.browser = await chromium.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-dev-shm-usage']
-          });
-        } catch (installError) {
-          console.error('Failed to install browsers:', installError);
-          throw new Error('Could not initialize browser after installation attempt');
-        }
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.log(`Browser launch failed: ${errorMsg}`);
+      
+      // Handle multiple error scenarios
+      if (errorMsg.includes('Executable doesn\'t exist') || errorMsg.includes('browser executable')) {
+        console.log('Browser executable missing, installing...');
+        await this.installBrowserAndRetry(launchOptions);
+      } else if (errorMsg.includes('timeout') || errorMsg.includes('Timeout')) {
+        console.log('Browser launch timeout, retrying with extended timeout...');
+        launchOptions.timeout = 60000;
+        this.browser = await chromium.launch(launchOptions);
+      } else if (errorMsg.includes('Failed to launch') || errorMsg.includes('spawn')) {
+        console.log('Browser spawn failed, cleaning up and retrying...');
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5s
+        this.browser = await chromium.launch(launchOptions);
       } else {
         throw error;
       }
     }
     
+    if (!this.browser) {
+      throw new Error('Browser initialization failed');
+    }
+    
     this.context = await this.browser.newContext({
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1920, height: 1080 },
+      locale: 'en-US',
+      timezoneId: 'America/New_York',
+      extraHTTPHeaders: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
+      }
     });
     
     console.log('Browser initialized successfully');
   }
 
   /**
+   * Install browser and retry launch
+   */
+  private async installBrowserAndRetry(launchOptions: any): Promise<void> {
+    try {
+      console.log('Installing Playwright browsers...');
+      execSync('npx playwright install chromium', { stdio: 'inherit' });
+      console.log('Browser installation completed, retrying launch...');
+      
+      // Wait a moment for installation to settle
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      this.browser = await chromium.launch(launchOptions);
+    } catch (installError) {
+      console.error('Failed to install browsers:', installError);
+      throw new Error('Could not initialize browser after installation attempt');
+    }
+  }
+
+  /**
    * Clean up browser resources
    */
   async cleanup(): Promise<void> {
-    if (this.context) {
-      await this.context.close();
-      this.context = null;
+    try {
+      if (this.context) {
+        await this.context.close();
+        this.context = null;
+      }
+      if (this.browser) {
+        await this.browser.close();
+        this.browser = null;
+      }
+      
+      // Force garbage collection if available
+      if (global.gc) {
+        global.gc();
+      }
+      
+      console.log('Browser cleanup completed');
+    } catch (error) {
+      console.log('Cleanup warning (non-fatal):', error instanceof Error ? error.message : error);
     }
-    if (this.browser) {
-      await this.browser.close();
-      this.browser = null;
-    }
-    console.log('Browser cleanup completed');
   }
 
   /**
@@ -75,7 +160,36 @@ export class ScraperService {
 
     try {
       console.log('Navigating to floorplans page...');
-      await page.goto('https://flatsatpcm.com/floorplans/', { waitUntil: 'networkidle' });
+      
+      // Try multiple navigation strategies with different timeouts
+      let navigationSuccess = false;
+      const strategies = [
+        { waitUntil: 'domcontentloaded' as const, timeout: 45000, name: 'DOM loaded' },
+        { waitUntil: 'load' as const, timeout: 60000, name: 'full load' },
+        { waitUntil: 'networkidle' as const, timeout: 30000, name: 'network idle' }
+      ];
+
+      for (const strategy of strategies) {
+        try {
+          console.log(`Attempting navigation with ${strategy.name} strategy (${strategy.timeout}ms timeout)...`);
+          await page.goto('https://flatsatpcm.com/floorplans/', { 
+            waitUntil: strategy.waitUntil,
+            timeout: strategy.timeout
+          });
+          navigationSuccess = true;
+          console.log(`✅ Navigation successful with ${strategy.name} strategy`);
+          break;
+        } catch (navError) {
+          console.log(`⚠️ ${strategy.name} strategy failed: ${navError instanceof Error ? navError.message : navError}`);
+          if (strategy === strategies[strategies.length - 1]) {
+            throw navError; // Re-throw the last error if all strategies fail
+          }
+        }
+      }
+
+      if (!navigationSuccess) {
+        throw new Error('All navigation strategies failed');
+      }
 
       // Wait for content to load
       await page.waitForTimeout(2000);
@@ -433,20 +547,40 @@ export class ScraperService {
   }
 
   /**
-   * Run complete scraping workflow
+   * Run complete scraping workflow with retry logic
    */
   async run(): Promise<Apartment[]> {
     console.log('Starting apartment scraping workflow...');
     
-    try {
-      await this.initialize();
-      const apartments = await this.scrapeApartments();
-      
-      console.log(`Scraping completed successfully. Found ${apartments.length} available units.`);
-      return apartments;
-      
-    } finally {
-      await this.cleanup();
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`Scraping attempt ${attempt}/${maxRetries}...`);
+        await this.initialize();
+        const apartments = await this.scrapeApartments();
+        
+        console.log(`Scraping completed successfully. Found ${apartments.length} available units.`);
+        return apartments;
+        
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.log(`Scraping attempt ${attempt} failed: ${lastError.message}`);
+        
+        // Clean up before retry
+        await this.cleanup();
+        
+        if (attempt < maxRetries) {
+          const waitTime = attempt * 5000; // Exponential backoff: 5s, 10s, 15s
+          console.log(`Waiting ${waitTime}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
     }
+    
+    // If we get here, all retries failed
+    await this.cleanup();
+    throw lastError || new Error('All scraping attempts failed');
   }
 }
