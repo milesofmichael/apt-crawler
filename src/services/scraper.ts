@@ -1,4 +1,5 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
+import { execSync } from 'child_process';
 import { Apartment, ScrapedUnit } from '../types/apartment';
 
 /**
@@ -13,10 +14,30 @@ export class ScraperService {
    */
   async initialize(): Promise<void> {
     console.log('Initializing browser for scraping...');
-    this.browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-dev-shm-usage'] // For production deployment
-    });
+    
+    try {
+      this.browser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-dev-shm-usage'] // For production deployment
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Executable doesn\'t exist')) {
+        console.log('Browser not found, installing Playwright browsers...');
+        try {
+          execSync('npx playwright install chromium', { stdio: 'inherit' });
+          console.log('Browser installation completed, retrying launch...');
+          this.browser = await chromium.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-dev-shm-usage']
+          });
+        } catch (installError) {
+          console.error('Failed to install browsers:', installError);
+          throw new Error('Could not initialize browser after installation attempt');
+        }
+      } else {
+        throw error;
+      }
+    }
     
     this.context = await this.browser.newContext({
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'

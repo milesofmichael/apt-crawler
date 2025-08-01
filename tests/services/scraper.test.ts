@@ -1,5 +1,7 @@
 import { ScraperService } from '../../src/services/scraper';
 import { Apartment } from '../../src/types/apartment';
+import { chromium } from 'playwright';
+import { execSync } from 'child_process';
 
 // Mock Playwright
 const mockPage = {
@@ -31,6 +33,11 @@ const mockBrowser = {
   close: jest.fn()
 };
 
+// Mock child_process execSync
+jest.mock('child_process', () => ({
+  execSync: jest.fn()
+}));
+
 jest.mock('playwright', () => ({
   chromium: {
     launch: jest.fn(() => Promise.resolve(mockBrowser))
@@ -49,6 +56,10 @@ describe('ScraperService', () => {
     mockLocator.nth.mockReturnValue(mockLocator);
     mockLocator.first.mockReturnValue(mockLocator);
     
+    // Reset chromium.launch mock to default success
+    (chromium.launch as jest.Mock).mockReset().mockResolvedValue(mockBrowser);
+    (execSync as jest.Mock).mockReset();
+    
     scraperService = new ScraperService();
   });
 
@@ -56,9 +67,100 @@ describe('ScraperService', () => {
     it('should initialize browser successfully', async () => {
       await scraperService.initialize();
 
+      expect(chromium.launch).toHaveBeenCalledWith({
+        headless: true,
+        args: ['--no-sandbox', '--disable-dev-shm-usage']
+      });
       expect(mockBrowser.newContext).toHaveBeenCalledWith({
         userAgent: expect.stringContaining('Mozilla/5.0')
       });
+    });
+
+    it('should install browsers and retry if executable does not exist', async () => {
+      // Mock first launch to fail with executable not found error
+      const executableError = new Error("browserType.launch: Executable doesn't exist at /opt/render/.cache/ms-playwright/chromium_headless_shell-1181/chrome-linux/headless_shell");
+      
+      (chromium.launch as jest.Mock)
+        .mockRejectedValueOnce(executableError)
+        .mockResolvedValue(mockBrowser);
+
+      await scraperService.initialize();
+
+      // Should have attempted launch twice
+      expect(chromium.launch).toHaveBeenCalledTimes(2);
+      
+      // Should have called execSync to install browsers
+      expect(execSync).toHaveBeenCalledWith('npx playwright install chromium', { stdio: 'inherit' });
+      
+      // Should eventually succeed in creating context
+      expect(mockBrowser.newContext).toHaveBeenCalledWith({
+        userAgent: expect.stringContaining('Mozilla/5.0')
+      });
+    });
+
+    it('should fail if browser installation fails', async () => {
+      const executableError = new Error("browserType.launch: Executable doesn't exist at /opt/render/.cache/ms-playwright/chromium_headless_shell-1181/chrome-linux/headless_shell");
+      const installError = new Error('Network error during installation');
+
+      (chromium.launch as jest.Mock).mockRejectedValue(executableError);
+      (execSync as jest.Mock).mockImplementation(() => {
+        throw installError;
+      });
+
+      await expect(scraperService.initialize()).rejects.toThrow('Could not initialize browser after installation attempt');
+      
+      expect(chromium.launch).toHaveBeenCalledTimes(1);
+      expect(execSync).toHaveBeenCalledWith('npx playwright install chromium', { stdio: 'inherit' });
+    });
+
+    it('should fail if second browser launch fails after installation', async () => {
+      const executableError = new Error("browserType.launch: Executable doesn't exist at /opt/render/.cache/ms-playwright/chromium_headless_shell-1181/chrome-linux/headless_shell");
+      const secondLaunchError = new Error('Still cannot launch browser');
+
+      (chromium.launch as jest.Mock)
+        .mockRejectedValueOnce(executableError)
+        .mockRejectedValueOnce(secondLaunchError);
+
+      await expect(scraperService.initialize()).rejects.toThrow('Could not initialize browser after installation attempt');
+      
+      expect(chromium.launch).toHaveBeenCalledTimes(2);
+      expect(execSync).toHaveBeenCalledWith('npx playwright install chromium', { stdio: 'inherit' });
+    });
+
+    it('should re-throw non-executable errors without attempting installation', async () => {
+      const networkError = new Error('Network connection failed');
+      
+      (chromium.launch as jest.Mock).mockRejectedValue(networkError);
+
+      await expect(scraperService.initialize()).rejects.toThrow('Network connection failed');
+      
+      expect(chromium.launch).toHaveBeenCalledTimes(1);
+      expect(execSync).not.toHaveBeenCalled();
+    });
+
+    it('should handle error message variations for executable not found', async () => {
+      // Test different error message formats that should trigger installation
+      const variations = [
+        "browserType.launch: Executable doesn't exist at /some/path",
+        "Executable doesn't exist at /another/path",
+        "Error: Executable doesn't exist"
+      ];
+
+      for (const errorMessage of variations) {
+        jest.clearAllMocks();
+        (execSync as jest.Mock).mockClear();
+        
+        const error = new Error(errorMessage);
+        (chromium.launch as jest.Mock)
+          .mockRejectedValueOnce(error)
+          .mockResolvedValue(mockBrowser);
+
+        const testScraper = new ScraperService();
+        await testScraper.initialize();
+
+        expect(execSync).toHaveBeenCalledWith('npx playwright install chromium', { stdio: 'inherit' });
+        await testScraper.cleanup();
+      }
     });
   });
 

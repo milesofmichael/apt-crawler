@@ -59,6 +59,7 @@ The Dellwood - #WEST-641 - $1,991 - Available Sep 28 | The Gateway - #WEST-437 -
 - **Jobs**: Recurring scrape job (every hour) + one-time runner
 - **Testing**: Jest with full coverage (51 tests passing)
 - **Deployment**: render.yaml blueprint with automatic Redis setup
+- **Browser Installation**: Automatic runtime installation for Render.com's ephemeral filesystem
 
 ## Environment Variables
 - SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
@@ -80,3 +81,7 @@ The Dellwood - #WEST-641 - $1,991 - Available Sep 28 | The Gateway - #WEST-437 -
 - Use BullMQ for reliable job processing
 - Maintain apartment availability history
 - Concise notification format for mobile push notifications
+
+## Render.com Notes
+- ScraperService auto-installs Playwright browsers at runtime (ephemeral filesystem issue)
+- Build command: `npm install && npm run build` (no browser pre-install needed)

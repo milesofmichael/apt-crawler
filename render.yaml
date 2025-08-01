@@ -3,7 +3,7 @@ services:
     name: apt-crawler-worker
     env: node
     plan: starter
-    buildCommand: npm install && npx playwright install --with-deps && npm run build
+    buildCommand: npm install && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
